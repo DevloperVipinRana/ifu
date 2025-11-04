@@ -31,48 +31,123 @@ const ReflectionScreen = () => {
 
   const [response, setResponse] = useState('');
 
+  // const handleSubmit = async () => {
+  //   if (response.trim().length < 5) {
+  //     Alert.alert('Please elaborate', 'Take a moment to write a thoughtful response.');
+  //     return;
+  //   }
+
+  //   try {
+  //     const token = await AsyncStorage.getItem('token');
+  //     const reflectionData = {
+  //       activityKey: title.toLowerCase().replace(/\s+/g, "_"),
+  //       title,
+  //       response,
+  //     };
+      
+  //     console.log('🚀 ReflectionScreen: Sending reflection data:', reflectionData);
+  //     console.log('🚀 ReflectionScreen: BASE_URL:', BASE_URL);
+  //     console.log('🚀 ReflectionScreen: Token:', token ? 'Present' : 'Missing');
+      
+  //     const fetchResponse = await fetch(`${BASE_URL}/api/activities/complete`, {
+  //       method: "POST",
+  //       headers: {
+  //         "Content-Type": "application/json",
+  //         Authorization: `Bearer ${token}`,
+  //       },
+  //       body: JSON.stringify(reflectionData),
+  //     });
+      
+  //     if (!fetchResponse.ok) {
+  //       throw new Error(`HTTP error! status: ${fetchResponse.status}`);
+  //     }
+      
+  //     const result = await fetchResponse.json();
+  //     console.log('✅ ReflectionScreen: Reflection saved successfully:', result);
+      
+  //     // Navigate to FeedbackScreen instead of going back
+  //     navigation.navigate('Feedback', { activityTitle: title });
+      
+  //   } catch (err) {
+  //     console.error('❌ ReflectionScreen: Error saving reflection:', err);
+  //     Alert.alert('Error', 'Could not save reflection. Please try again.');
+  //   }
+  // };
+
   const handleSubmit = async () => {
-    if (response.trim().length < 5) {
-      Alert.alert('Please elaborate', 'Take a moment to write a thoughtful response.');
+  if (response.trim().length < 5) {
+    Alert.alert('Please elaborate', 'Take a moment to write a thoughtful response.');
+    return;
+  }
+
+  try {
+    const token = await AsyncStorage.getItem('token');
+    
+    // Check if token exists
+    if (!token) {
+      console.error('❌ ReflectionScreen: No token found');
+      Alert.alert('Authentication Error', 'Please log in again.');
+      navigation.navigate('Login'); // or your login screen name
       return;
     }
 
-    try {
-      const token = await AsyncStorage.getItem('token');
-      const reflectionData = {
-        activityKey: title.toLowerCase().replace(/\s+/g, "_"),
-        title,
-        response,
-      };
-      
-      console.log('🚀 ReflectionScreen: Sending reflection data:', reflectionData);
-      console.log('🚀 ReflectionScreen: BASE_URL:', BASE_URL);
-      console.log('🚀 ReflectionScreen: Token:', token ? 'Present' : 'Missing');
-      
-      const fetchResponse = await fetch(`${BASE_URL}/api/activities/complete`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(reflectionData),
-      });
-      
-      if (!fetchResponse.ok) {
-        throw new Error(`HTTP error! status: ${fetchResponse.status}`);
-      }
-      
-      const result = await fetchResponse.json();
-      console.log('✅ ReflectionScreen: Reflection saved successfully:', result);
-      
-      // Navigate to FeedbackScreen instead of going back
-      navigation.navigate('Feedback', { activityTitle: title });
-      
-    } catch (err) {
-      console.error('❌ ReflectionScreen: Error saving reflection:', err);
-      Alert.alert('Error', 'Could not save reflection. Please try again.');
+    const reflectionData = {
+      activityKey: title.toLowerCase().replace(/\s+/g, "_"),
+      title,
+      response,
+    };
+    
+    console.log('🚀 ReflectionScreen: Sending reflection data:', reflectionData);
+    console.log('🚀 ReflectionScreen: BASE_URL:', BASE_URL);
+    console.log('🚀 ReflectionScreen: Full URL:', `${BASE_URL}/api/activities/complete`);
+    
+    const fetchResponse = await fetch(`${BASE_URL}/api/activities/complete`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(reflectionData),
+    });
+    
+    console.log('📡 ReflectionScreen: Response status:', fetchResponse.status);
+    console.log('📡 ReflectionScreen: Response headers:', fetchResponse.headers);
+    
+    // Get response text first to see what we received
+    const responseText = await fetchResponse.text();
+    console.log('📡 ReflectionScreen: Response body:', responseText);
+    
+    if (!fetchResponse.ok) {
+      console.error('❌ ReflectionScreen: HTTP error:', fetchResponse.status, responseText);
+      throw new Error(`HTTP error! status: ${fetchResponse.status}, body: ${responseText}`);
     }
-  };
+    
+    // Parse the response
+    const result = JSON.parse(responseText);
+    console.log('✅ ReflectionScreen: Reflection saved successfully:', result);
+    
+    // Navigate to FeedbackScreen
+    navigation.navigate('Feedback', { activityTitle: title });
+    
+  } catch (err) {
+    console.error('❌ ReflectionScreen: Error saving reflection:', err);
+    console.error('❌ ReflectionScreen: Error details:', {
+      message: err.message,
+      name: err.name,
+      stack: err.stack
+    });
+    
+    // More descriptive error message
+    if (err.message.includes('Network request failed')) {
+      Alert.alert('Network Error', 'Cannot connect to server. Please check your connection and BASE_URL configuration.');
+    } else if (err.message.includes('401')) {
+      Alert.alert('Authentication Error', 'Session expired. Please log in again.');
+    } else {
+      Alert.alert('Error', `Could not save reflection: ${err.message}`);
+    }
+  }
+};
+
 
   return (
     <SafeAreaView style={styles.container}>

@@ -82,8 +82,8 @@ const handleNavigateToSignup = () => {
       console.log('Login Success:', result);
       Alert.alert('Success', 'Welcome Back');
       
-      await AsyncStorage.setItem('token', result.token);
-      await AsyncStorage.setItem('userId', result.user.id); // Use 'id' not '_id'
+      await AsyncStorage.setItem('token', String(result.token));
+      await AsyncStorage.setItem('userId', String(result.user.id)); // Use 'id' not '_id'
   
       if (result.user.profileCompleted) {
         navigation.navigate("BottomTabNavigator");

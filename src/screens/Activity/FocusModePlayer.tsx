@@ -1,7 +1,7 @@
 // mobile/src/screens/Activity/FocusModePlayer.tsx
 
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, StatusBar, Text } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, StatusBar, Text, Alert } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -54,45 +54,95 @@ const FocusModePlayer = () => {
     return () => clearInterval(timer);
   }, [seconds, isComplete]);
   
-  const handleComplete = async () => {
-    try {
-      const token = await AsyncStorage.getItem('token');
-      const activityData = {
-        activityKey: title.toLowerCase().replace(/\s+/g, "_"),
-        title,
-      };
+  // const handleComplete = async () => {
+  //   try {
+  //     const token = await AsyncStorage.getItem('token');
+  //     const activityData = {
+  //       activityKey: title.toLowerCase().replace(/\s+/g, "_"),
+  //       title,
+  //     };
       
-      console.log('🚀 FocusModePlayer: Sending activity data:', activityData);
-      console.log('🚀 FocusModePlayer: BASE_URL:', BASE_URL);
-      console.log('🚀 FocusModePlayer: Token:', token ? 'Present' : 'Missing');
+  //     console.log('🚀 FocusModePlayer: Sending activity data:', activityData);
+  //     console.log('🚀 FocusModePlayer: BASE_URL:', BASE_URL);
+  //     console.log('🚀 FocusModePlayer: Token:', token ? 'Present' : 'Missing');
       
-      // Save activity completion to backend
-      const response = await fetch(`${BASE_URL}/api/activities/complete`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(activityData),
-      });
+  //     // Save activity completion to backend
+  //     const response = await fetch(`${BASE_URL}/api/activities/complete`, {
+  //       method: "POST",
+  //       headers: {
+  //         "Content-Type": "application/json",
+  //         Authorization: `Bearer ${token}`,
+  //       },
+  //       body: JSON.stringify(activityData),
+  //     });
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+  //     if (!response.ok) {
+  //       throw new Error(`HTTP error! status: ${response.status}`);
+  //     }
       
-      const result = await response.json();
-      console.log('✅ FocusModePlayer: Activity saved successfully:', result);
+  //     const result = await response.json();
+  //     console.log('✅ FocusModePlayer: Activity saved successfully:', result);
       
-      // Navigate to the FeedbackScreen, passing the activity's title for context.
-      navigation.navigate('Feedback', { activityTitle: title });
-    } catch (err) {
-      console.error('❌ FocusModePlayer: Error saving activity:', err);
-      // Still navigate to feedback screen even if save fails
-      navigation.navigate('Feedback', { activityTitle: title });
-    }
-  };
+  //     // Navigate to the FeedbackScreen, passing the activity's title for context.
+  //     navigation.navigate('Feedback', { activityTitle: title });
+  //   } catch (err) {
+  //     console.error('❌ FocusModePlayer: Error saving activity:', err);
+  //     // Still navigate to feedback screen even if save fails
+  //     navigation.navigate('Feedback', { activityTitle: title });
+  //   }
+  // };
 
   // Calculate progress from 0 to 100
+  
+  const handleComplete = async () => {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    
+    if (!token) {
+      console.error('❌ No token found');
+      Alert.alert('Error', 'Authentication token not found');
+      return;
+    }
+
+    const activityData = {
+      activityKey: title.toLowerCase().replace(/\s+/g, "_"),
+      title,
+    };
+    
+    console.log('🚀 FocusModePlayer: Sending activity data:', activityData);
+    console.log('🚀 FocusModePlayer: BASE_URL:', BASE_URL);
+    
+    const response = await fetch(`${BASE_URL}/api/activities/complete`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(activityData),
+    });
+    
+    console.log('📡 Response status:', response.status);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Error response body:', errorText);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    console.log('✅ FocusModePlayer: Activity saved successfully:', result);
+    
+    // Navigate to the FeedbackScreen
+    navigation.navigate('Feedback', { activityTitle: title });
+  } catch (err) {
+    console.error('❌ FocusModePlayer: Error saving activity:', err);
+    Alert.alert('Error', 'Could not save activity. Please try again.');
+    // Only navigate on success, or ask user if they want to continue
+  }
+};
+
+
+
   const progressValue = ((duration - seconds) / duration) * 100;
   // Format the time to display as MM:SS
   const formattedTime = `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')}`;

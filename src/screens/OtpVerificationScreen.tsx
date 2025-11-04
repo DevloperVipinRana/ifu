@@ -54,48 +54,124 @@ const OtpVerificationScreen = () => {
     }
   };
 
- const handleVerifyOtp = async () => {
+// const handleVerifyOtp = async () => {
+//   const enteredOtp = otp.join('');
+//   if (enteredOtp.length !== OTP_LENGTH) {
+//     Alert.alert('Incomplete Code', 'Please enter the full OTP code.');
+//     return;
+//   }
+
+//   try {
+//     // ✅ Explicitly ensure code is sent as a string
+//     const verifyResponse = await fetch(`${BASE_URL}/api/auth/verify-otp`, {
+//       method: 'POST',
+//       headers: { 'Content-Type': 'application/json' },
+//       body: JSON.stringify({ 
+//         email: String(route.params.email), 
+//         code: String(enteredOtp) // Explicitly convert to string
+//       }),
+//     });
+
+//     const verifyResult = await verifyResponse.json();
+//     if (!verifyResponse.ok) throw new Error(verifyResult.message || 'OTP verification failed');
+
+//     const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+//     const { name, email, password, zipCode, gender } = route.params;
+//     const signupResponse = await fetch(`${BASE_URL}/api/auth/signup`, {
+//       method: 'POST',
+//       headers: { 'Content-Type': 'application/json' },
+//       body: JSON.stringify({ 
+//         name: String(name), 
+//         email: String(email), 
+//         password: String(password), 
+//         zip_code: String(zipCode), // Note: backend expects zip_code
+//         gender: String(gender), 
+//         timezone: userTimeZone 
+//       }),
+//     });
+
+//     const signupResult = await signupResponse.json();
+//     if (!signupResponse.ok) throw new Error(signupResult.message || 'User creation failed');
+
+//     await AsyncStorage.setItem('token', signupResult.token);
+//     await AsyncStorage.setItem('user', JSON.stringify(signupResult.user));
+//     await AsyncStorage.setItem('userId', String(signupResult.user.id)); // Ensure string
+
+//     Alert.alert('Success', 'Your account has been created!', [
+//       { text: 'OK', onPress: () => navigation.reset({ index: 0, routes: [{ name: 'EditProfileScreen' }] }) },
+//     ]);
+//   } catch (err: any) {
+//     console.error('Verification error:', err); // Add logging
+//     Alert.alert('Error', err.message);
+//   }
+// };
+const handleVerifyOtp = async () => {
   const enteredOtp = otp.join('');
   if (enteredOtp.length !== OTP_LENGTH) {
     Alert.alert('Incomplete Code', 'Please enter the full OTP code.');
     return;
   }
 
-  // Use the route from the top of the component
   try {
+    // ✅ Step 1: Verify OTP first
     const verifyResponse = await fetch(`${BASE_URL}/api/auth/verify-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: route.params.email, code: enteredOtp }),
+      body: JSON.stringify({ 
+        email: String(route.params.email), 
+        code: String(enteredOtp) 
+      }),
     });
 
     const verifyResult = await verifyResponse.json();
-    if (!verifyResponse.ok) throw new Error(verifyResult.message || 'OTP verification failed');
+    
+    // ✅ If OTP verification fails, stop here
+    if (!verifyResponse.ok) {
+      throw new Error(verifyResult.message || 'OTP verification failed');
+    }
 
+    // ✅ Step 2: Only create user after successful OTP verification
     const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-
     const { name, email, password, zipCode, gender } = route.params;
+    
     const signupResponse = await fetch(`${BASE_URL}/api/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password, zipCode, gender, timezone: userTimeZone }),
+      body: JSON.stringify({ 
+        name: String(name), 
+        email: String(email), 
+        password: String(password), 
+        zip_code: String(zipCode), 
+        gender: String(gender), 
+        timezone: userTimeZone 
+      }),
     });
 
     const signupResult = await signupResponse.json();
-    if (!signupResponse.ok) throw new Error(signupResult.message || 'User creation failed');
+    
+    // ✅ If signup fails, show error
+    if (!signupResponse.ok) {
+      throw new Error(signupResult.message || 'User creation failed');
+    }
 
+    // ✅ Store authentication data
     await AsyncStorage.setItem('token', signupResult.token);
-
-// ✅ Store user so ProfileScreen can use it later
-await AsyncStorage.setItem('user', JSON.stringify(signupResult.user));
-await AsyncStorage.setItem('userId', signupResult.user.id);
+    await AsyncStorage.setItem('user', JSON.stringify(signupResult.user));
+    await AsyncStorage.setItem('userId', String(signupResult.user.id));
 
     Alert.alert('Success', 'Your account has been created!', [
-      { text: 'OK', onPress: () => navigation.reset({ index: 0, routes: [{ name: 'EditProfileScreen' }] }) },
+      { 
+        text: 'OK', 
+        onPress: () => navigation.reset({ 
+          index: 0, 
+          routes: [{ name: 'EditProfileScreen' }] 
+        }) 
+      },
     ]);
   } catch (err: any) {
-    Alert.alert('Error', err.message);
+    console.error('Verification/Signup error:', err);
+    Alert.alert('Error', err.message || 'Something went wrong');
   }
 };
 

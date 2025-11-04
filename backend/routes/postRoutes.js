@@ -1,331 +1,392 @@
 const express = require("express");
 const router = express.Router();
-const Post = require("../models/Post");
-const { authMiddleware } = require("./auth");
 const multer = require("multer");
 const path = require("path");
-const User = require("../models/User");
+const { authMiddleware } = require("./auth");
+const prisma = require("../prismaClient");
 
-// storage for posts
+// --- Multer setup for image uploads ---
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, "uploads/posts/"),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    cb(null, req.user.id + "_" + Date.now() + ext);
+    cb(null, `${req.user.id}_${Date.now()}${ext}`);
   },
 });
-
 const upload = multer({ storage });
 
+// ✅ CREATE NEW POST
 router.post("/", authMiddleware, upload.single("image"), async (req, res) => {
   try {
     const { text, hashtags } = req.body;
 
-    // ✅ Extract hashtags written in text like #motivation
     const extractedHashtags = text ? text.match(/#\w+/g) || [] : [];
-
-    // ✅ Merge both manually typed + recommended hashtags from frontend
     let allHashtags = extractedHashtags;
+
     if (hashtags) {
       try {
         const parsed = JSON.parse(hashtags);
         allHashtags = [...new Set([...extractedHashtags, ...parsed])];
-      } catch (err) {
-        console.warn("Invalid hashtags format, skipping JSON parse");
+      } catch {
+        console.warn("Invalid hashtags JSON");
       }
     }
 
-    const newPost = new Post({
-      user: req.user.id,
-      text,
-      image: req.file ? `/uploads/posts/${req.file.filename}` : null,
-      hashtags: allHashtags,
+    const imagePath = req.file ? `/uploads/posts/${req.file.filename}` : null;
+
+    // Create post with hashtags
+    const post = await prisma.posts.create({
+      data: {
+        user_id: Number(req.user.id),
+        text,
+        image: imagePath,
+        created_at: new Date(),
+        updated_at: new Date(),
+        post_hashtags: {
+          create: allHashtags.map((tag) => ({
+            hashtag: tag.replace(/^#/, "").toLowerCase(),
+          })),
+        },
+      },
+      include: { post_hashtags: true },
     });
 
-    await newPost.save();
-    res.status(201).json(newPost);
+    res.status(201).json({ id: post.id, message: "Post created successfully" });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("❌ POST /api/posts error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
+// ✅ LIKE / UNLIKE POST (with notifications)
+router.put("/:id/like", authMiddleware, async (req, res) => {
+  try {
+    const userId = Number(req.user.id);
+    const postId = Number(req.params.id);
+
+    // Get post details to find the post owner
+    const post = await prisma.posts.findUnique({
+      where: { id: postId },
+      select: { user_id: true, text: true },
+    });
+
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    const existingLike = await prisma.post_likes.findFirst({
+      where: { user_id: userId, post_id: postId },
+    });
+
+    if (existingLike) {
+      // Unlike: delete like and notification
+      await prisma.$transaction([
+        prisma.post_likes.delete({ where: { id: existingLike.id } }),
+        prisma.notifications.deleteMany({
+          where: {
+            sender_id: userId,
+            recipient_id: post.user_id,
+            post_id: postId,
+            type: "like",
+          },
+        }),
+      ]);
+
+      const likes = await prisma.post_likes.findMany({
+        where: { post_id: postId },
+        select: { user_id: true },
+      });
+
+      return res.json({
+        liked: false,
+        likes: likes.map((l) => l.user_id.toString()),
+        message: "Post unliked",
+      });
+    }
+
+    // Like: create like and notification (only if not liking own post)
+    await prisma.post_likes.create({
+      data: { user_id: userId, post_id: postId },
+    });
+
+    if (post.user_id !== userId) {
+      // Get sender's name for notification
+      const sender = await prisma.users.findUnique({
+        where: { id: userId },
+        select: { name: true },
+      });
+
+      await prisma.notifications.create({
+        data: {
+          sender_id: userId,
+          recipient_id: post.user_id,
+          post_id: postId,
+          type: "like",
+          text: `${sender.name} liked your post`,
+          read: 0,
+          created_at: new Date(),
+        },
+      });
+    }
+
+    const likes = await prisma.post_likes.findMany({
+      where: { post_id: postId },
+      select: { user_id: true },
+    });
+
+    res.json({
+      liked: true,
+      likes: likes.map((l) => l.user_id.toString()),
+      message: "Post liked",
+    });
+  } catch (err) {
+    console.error("❌ PUT /like error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+// ✅ ADD COMMENT (with notifications)
+router.post("/:id/comment", authMiddleware, async (req, res) => {
+  try {
+    const postId = Number(req.params.id);
+    const userId = Number(req.user.id);
+    const { text } = req.body;
+
+    // Get post details to find the post owner
+    const post = await prisma.posts.findUnique({
+      where: { id: postId },
+      select: { user_id: true, text: true },
+    });
+
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    // Create comment
+    await prisma.post_comments.create({
+      data: {
+        post_id: postId,
+        user_id: userId,
+        text,
+        created_at: new Date(),
+      },
+    });
+
+    // Create notification (only if not commenting on own post)
+    if (post.user_id !== userId) {
+      // Get sender's name for notification
+      const sender = await prisma.users.findUnique({
+        where: { id: userId },
+        select: { name: true },
+      });
+
+      await prisma.notifications.create({
+        data: {
+          sender_id: userId,
+          recipient_id: post.user_id,
+          post_id: postId,
+          type: "comment",
+          text: `${sender.name} commented on your post`,
+          read: 0,
+          created_at: new Date(),
+        },
+      });
+    }
+
+    const comments = await prisma.post_comments.findMany({
+      where: { post_id: postId },
+      include: {
+        users: {
+          select: { id: true, name: true, profile_image: true },
+        },
+      },
+      orderBy: { created_at: "asc" },
+    });
+
+    const formattedComments = comments.map((c) => ({
+      _id: c.id.toString(),
+      text: c.text,
+      user: {
+        _id: c.user_id.toString(),
+        name: c.users?.name,
+        profileImage: c.users?.profile_image,
+      },
+    }));
+
+    res.json({ message: "Comment added", comments: formattedComments });
+  } catch (err) {
+    console.error("❌ POST /comment error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+// ✅ FETCH FEED (excluding user's own posts) WITH INTEREST MATCHING
 router.get("/feed", authMiddleware, async (req, res) => {
   try {
-    // 1️⃣ Get user's interests
-    const user = await User.findById(req.user.id).select("interests");
-    const interests = user?.interests?.map(i => 
-      i.trim().toLowerCase().replace(/^#/, '')
-    ) || [];
+    const userId = Number(req.user.id);
 
-    // 2️⃣ Fetch all posts with populated comments.user
-    const posts = await Post.find({
-      deleted: false,
-      user: { $ne: req.user.id }
-    })
-      .populate("user", "name email profileImage")
-      .populate("comments.user", "name profileImage") // ✅ Populate comment user details
-      .sort({ createdAt: -1 })
-      .lean();
+    // Get current user's interests
+    const currentUser = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { interests: true },
+    });
 
-    // 3️⃣ Mark posts if they match interests & calculate match score
-    const postsWithMatchFlag = posts.map(post => {
-      const hashtags = post.hashtags?.map(h => 
-        h.trim().toLowerCase().replace(/^#/, '')
-      ) || [];
+    let userInterests = [];
+    if (currentUser?.interests) {
+      try {
+        userInterests = JSON.parse(currentUser.interests);
+        // Normalize interests to lowercase for comparison
+        userInterests = userInterests.map((interest) => interest.toLowerCase());
+      } catch (err) {
+        console.warn("Failed to parse user interests:", err);
+      }
+    }
+
+    // Fetch all posts (excluding user's own)
+    const posts = await prisma.posts.findMany({
+      where: { deleted: 0, NOT: { user_id: userId } },
+      include: {
+        users: { select: { id: true, name: true, profile_image: true } },
+        post_hashtags: true,
+        post_likes: true,
+        post_comments: {
+          include: {
+            users: { select: { id: true, name: true, profile_image: true } },
+          },
+        },
+      },
+      orderBy: { created_at: "desc" },
+    });
+
+    // Format posts and check if hashtags match user interests
+    const formatted = posts.map((p) => {
+      const postHashtags = p.post_hashtags.map((h) => h.hashtag.toLowerCase());
       
-      const matchingTags = hashtags.filter(h => interests.includes(h));
-      const matches = matchingTags.length > 0;
-      
-      return { 
-        ...post, 
-        matchesInterest: matches,
-        matchScore: matchingTags.length
+      // Check if any post hashtag matches any user interest
+      const matchesInterest = userInterests.length > 0 && 
+        postHashtags.some((hashtag) => 
+          userInterests.some((interest) => 
+            hashtag.includes(interest) || interest.includes(hashtag)
+          )
+        );
+
+      return {
+        _id: p.id.toString(),
+        text: p.text,
+        image: p.image,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+        hashtags: p.post_hashtags.map((h) => `#${h.hashtag}`),
+        likes: p.post_likes.map((l) => l.user_id.toString()),
+        comments: p.post_comments.map((c) => ({
+          _id: c.id.toString(),
+          text: c.text,
+          user: {
+            _id: c.users?.id.toString(),
+            name: c.users?.name,
+            profileImage: c.users?.profile_image,
+          },
+        })),
+        user: {
+          _id: p.users?.id.toString(),
+          name: p.users?.name,
+          profileImage: p.users?.profile_image,
+        },
+        matchesInterest, // ✅ Add this flag for frontend
       };
     });
 
-    // 4️⃣ Sort: matching posts section first, then non-matching section
-    postsWithMatchFlag.sort((a, b) => {
-      if (a.matchesInterest && !b.matchesInterest) return -1;
-      if (!a.matchesInterest && b.matchesInterest) return 1;
-      return 0;
-    });
+    // Sort: matching posts first, then others (both in descending order by date)
+    const sortedPosts = [
+      ...formatted.filter((p) => p.matchesInterest),
+      ...formatted.filter((p) => !p.matchesInterest),
+    ];
 
-    res.json(postsWithMatchFlag);
+    console.log(`📊 Feed stats: ${sortedPosts.filter(p => p.matchesInterest).length} matching, ${sortedPosts.filter(p => !p.matchesInterest).length} other posts`);
+
+    res.json(sortedPosts);
   } catch (err) {
-    console.error("Feed error:", err);
-    res.status(500).json({ message: "Server error" });
+    console.error("❌ GET /feed error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
+// ✅ SOFT DELETE POST
 router.delete("/:id", authMiddleware, async (req, res) => {
   try {
-    const post = await Post.findOne({ _id: req.params.id, user: req.user.id });
-    if (!post) return res.status(404).json({ message: "Post not found" });
+    const postId = Number(req.params.id);
+    const userId = Number(req.user.id);
 
-    post.deleted = true;
-    await post.save();
+    const post = await prisma.posts.updateMany({
+      where: { id: postId, user_id: userId },
+      data: { deleted: 1 },
+    });
+
+    if (post.count === 0)
+      return res
+        .status(404)
+        .json({ message: "Post not found or not owned by user" });
 
     res.json({ message: "Post deleted (soft)" });
   } catch (err) {
-    res.status(500).json({ message: "Server error" });
+    console.error("❌ DELETE /post error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
-// 👉 LIKE / UNLIKE POST
-router.put("/:id/like", authMiddleware, async (req, res) => {
+router.get("/my-posts", authMiddleware, async (req, res) => {
   try {
-    const post = await Post.findById(req.params.id);
-    if (!post) return res.status(404).json({ message: "Post not found" });
+    const userId = Number(req.user.id);
 
-    const userId = String(req.user.id);
-    const hasLiked = post.likes.some((id) => String(id) === userId);
-    if (hasLiked) {
-      post.likes = post.likes.filter((id) => String(id) !== userId);
-    } else {
-      post.likes.push(req.user.id);
-    }
+    // Fetch only current user's posts
+    const posts = await prisma.posts.findMany({
+      where: { deleted: 0, user_id: userId },
+      include: {
+        users: { select: { id: true, name: true, profile_image: true } },
+        post_hashtags: true,
+        post_likes: true,
+        post_comments: {
+          include: {
+            users: { select: { id: true, name: true, profile_image: true } },
+          },
+        },
+      },
+      orderBy: { created_at: "desc" },
+    });
 
-    await post.save();
-    res.json(post);
+    // Format posts
+    const formatted = posts.map((p) => ({
+      _id: p.id.toString(),
+      text: p.text,
+      image: p.image,
+      created_at: p.created_at,
+      updated_at: p.updated_at,
+      hashtags: p.post_hashtags.map((h) => `#${h.hashtag}`),
+      likes: p.post_likes.map((l) => l.user_id.toString()),
+      comments: p.post_comments.map((c) => ({
+        _id: c.id.toString(),
+        text: c.text,
+        user: {
+          _id: c.users?.id.toString(),
+          name: c.users?.name,
+          profileImage: c.users?.profile_image,
+        },
+      })),
+      user: {
+        _id: p.users?.id.toString(),
+        name: p.users?.name,
+        profileImage: p.users?.profile_image,
+      },
+    }));
+
+    console.log(`📊 User posts: ${formatted.length} posts found for user ${userId}`);
+
+    res.json(formatted);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("❌ GET /my-posts error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
-// 👉 ADD COMMENT - Now returns populated comment
-router.post("/:id/comment", authMiddleware, async (req, res) => {
-  try {
-    const post = await Post.findById(req.params.id);
-    if (!post) return res.status(404).json({ message: "Post not found" });
-
-    post.comments.push({ user: req.user.id, text: req.body.text });
-    await post.save();
-
-    // ✅ Populate comments after saving
-    await post.populate("comments.user", "name profileImage");
-
-    res.json(post);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
 
 module.exports = router;
-
-
-
-// const express = require("express");
-// const router = express.Router();
-// const Post = require("../models/Post");
-// const { authMiddleware } = require("./auth"); // use your middleware
-// const multer = require("multer");
-// const path = require("path");
-// const User = require("../models/User");
-
-
-// // storage for posts
-// const storage = multer.diskStorage({
-//   destination: (req, file, cb) => cb(null, "uploads/posts/"),
-//   filename: (req, file, cb) => {
-//     const ext = path.extname(file.originalname);
-//     cb(null, req.user.id + "_" + Date.now() + ext);
-//   },
-// });
-
-// const upload = multer({ storage });
-
-
-// router.post("/", authMiddleware, upload.single("image"), async (req, res) => {
-//   try {
-//     const { text, hashtags } = req.body;
-
-//     // ✅ Extract hashtags written in text like #motivation
-//     const extractedHashtags = text ? text.match(/#\w+/g) || [] : [];
-
-//     // ✅ Merge both manually typed + recommended hashtags from frontend
-//     let allHashtags = extractedHashtags;
-//     if (hashtags) {
-//       try {
-//         const parsed = JSON.parse(hashtags);
-//         allHashtags = [...new Set([...extractedHashtags, ...parsed])];
-//       } catch (err) {
-//         console.warn("Invalid hashtags format, skipping JSON parse");
-//       }
-//     }
-
-//     const newPost = new Post({
-//       user: req.user.id,
-//       text,
-//       image: req.file ? `/uploads/posts/${req.file.filename}` : null,
-//       hashtags: allHashtags, // ✅ added field
-//     });
-
-//     await newPost.save();
-//     res.status(201).json(newPost);
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// });
-
-// router.get("/feed", authMiddleware, async (req, res) => {
-//   try {
-//     // 1️⃣ Get user's interests
-//     const user = await User.findById(req.user.id).select("interests");
-//     const interests = user?.interests?.map(i => 
-//       i.trim().toLowerCase().replace(/^#/, '') // Remove # if present
-//     ) || [];
-    
-//     // console.log("User interests:", interests);
-
-//     // 2️⃣ Fetch all posts (non-deleted, not current user) - SORTED BY NEWEST FIRST
-//     const posts = await Post.find({
-//       deleted: false,
-//       user: { $ne: req.user.id }
-//     })
-//       .populate("user", "name email profileImage")
-//       .sort({ createdAt: -1 }) // ✅ Sort by newest first in database
-//       .lean(); // Use lean() for better performance
-
-//     // console.log(`Found ${posts.length} posts`);
-
-//     // 3️⃣ Mark posts if they match interests & calculate match score
-//     const postsWithMatchFlag = posts.map(post => {
-//       const hashtags = post.hashtags?.map(h => 
-//         h.trim().toLowerCase().replace(/^#/, '') // Remove # if present
-//       ) || [];
-      
-//       // Check if any hashtag matches user interests
-//       const matchingTags = hashtags.filter(h => interests.includes(h));
-//       const matches = matchingTags.length > 0;
-      
-//       // if (matches) {
-//       //   console.log(`Post ${post._id} matches with tags:`, matchingTags);
-//       // }
-      
-//       return { 
-//         ...post, 
-//         matchesInterest: matches,
-//         matchScore: matchingTags.length // Higher score = more matching tags
-//       };
-//     });
-
-//     // 4️⃣ Sort: matching posts section first, then non-matching section
-//     // Within each section, maintain chronological order (already sorted by createdAt)
-//     postsWithMatchFlag.sort((a, b) => {
-//       // If one matches and other doesn't, matching comes first
-//       if (a.matchesInterest && !b.matchesInterest) return -1;
-//       if (!a.matchesInterest && b.matchesInterest) return 1;
-      
-//       // ✅ If both match OR both don't match, keep original order (newest first)
-//       // Since we already sorted by createdAt in the query, we don't need to re-sort
-//       return 0;
-//     });
-
-//     // console.log(`Returning ${postsWithMatchFlag.length} posts (${postsWithMatchFlag.filter(p => p.matchesInterest).length} matching)`);
-
-//     res.json(postsWithMatchFlag);
-//   } catch (err) {
-//     console.error("Feed error:", err);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// });
-
-
-// router.delete("/:id", authMiddleware, async (req, res) => {
-//   try {
-//     const post = await Post.findOne({ _id: req.params.id, user: req.user.id });
-//     if (!post) return res.status(404).json({ message: "Post not found" });
-
-//     post.deleted = true;
-//     await post.save();
-
-//     res.json({ message: "Post deleted (soft)" });
-//   } catch (err) {
-//     res.status(500).json({ message: "Server error" });
-//   }
-// });
-
-// // 👉 LIKE / UNLIKE POST
-// router.put("/:id/like", authMiddleware, async (req, res) => {
-//   try {
-//     const post = await Post.findById(req.params.id);
-//     if (!post) return res.status(404).json({ message: "Post not found" });
-
-//     const userId = String(req.user.id);
-//     const hasLiked = post.likes.some((id) => String(id) === userId);
-//     if (hasLiked) {
-//       post.likes = post.likes.filter((id) => String(id) !== userId);
-//     } else {
-//       post.likes.push(req.user.id);
-//     }
-
-//     await post.save();
-//     res.json(post);
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// });
-
-// // // 👉 ADD COMMENT
-// router.post("/:id/comment", authMiddleware, async (req, res) => {
-//   try {
-//     const post = await Post.findById(req.params.id);
-//     if (!post) return res.status(404).json({ message: "Post not found" });
-
-//     post.comments.push({ user: req.user.id, text: req.body.text });
-//     await post.save();
-
-//     res.json(post);
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// });
-
-
-// module.exports = router;

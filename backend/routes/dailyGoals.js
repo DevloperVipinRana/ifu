@@ -1,166 +1,194 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const DailyGoal = require('../models/DailyGoal');
-const {authMiddleware} = require('./auth'); // use default export if you did module.exports = authMiddleware
+const prisma = require("../prismaClient"); // ✅ Prisma Client
+const { authMiddleware } = require("./auth");
+
+// Helper: format goal object for frontend
+const formatGoalResponse = (goal) => ({
+  _id: String(goal.id),
+  id: goal.id,
+  user_id: goal.user_id,
+  text: goal.text,
+  completed: Boolean(goal.completed),
+  date: goal.created_at,
+  created_at: goal.created_at,
+  updated_at: goal.updated_at,
+});
 
 // ✅ Add a daily goal
-router.post('/', authMiddleware, async (req, res) => {
+router.post("/", authMiddleware, async (req, res) => {
   try {
     const { text } = req.body;
-    const dailyGoal = new DailyGoal({ user: req.user.id, text });
-    await dailyGoal.save();
-    res.status(201).json(dailyGoal);
+    const userId = Number(req.user.id);
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: "Goal text is required" });
+    }
+
+    const newGoal = await prisma.daily_goals.create({
+      data: {
+        user_id: userId,
+        text: text.trim(),
+        completed: 0,
+        created_at: new Date(),
+        updated_at: new Date(),
+      },
+    });
+
+    console.log("✅ Daily goal added:", newGoal);
+    res.status(201).json(formatGoalResponse(newGoal));
   } catch (err) {
+    console.error("❌ Error adding daily goal:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ Get today’s daily goals
-// router.get('/', authMiddleware, async (req, res) => {
-//   try {
-//     const startOfDay = new Date();
-//     startOfDay.setHours(0, 0, 0, 0);
-//     const endOfDay = new Date();
-//     endOfDay.setHours(23, 59, 59, 999);
-
-//     const dailyGoals = await DailyGoal.find({
-//       user: req.user.id,
-//       date: { $gte: startOfDay, $lte: endOfDay },
-//     });
-
-//     res.json(dailyGoals);
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
-
-router.get('/', authMiddleware, async (req, res) => {
+// ✅ Get today's daily goals
+router.get("/", authMiddleware, async (req, res) => {
   try {
+    const userId = Number(req.user.id);
+
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-
     const endOfDay = new Date();
     endOfDay.setHours(23, 59, 59, 999);
 
-    const dailyGoals = await DailyGoal.find({
-      user: req.user.id,
-      createdAt: { $gte: startOfDay, $lte: endOfDay },
+    const goals = await prisma.daily_goals.findMany({
+      where: {
+        user_id: userId,
+        created_at: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+      },
+      orderBy: { created_at: "desc" },
     });
 
-    res.json(dailyGoals);
+    const formatted = goals.map(formatGoalResponse);
+    console.log(`✅ Fetched ${formatted.length} daily goals for user ${userId}`);
+    res.json(formatted);
   } catch (err) {
+    console.error("❌ Error fetching daily goals:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-
-// ✅ Toggle complete
-router.patch('/:id/toggle', authMiddleware, async (req, res) => {
+// ✅ Toggle completion
+router.patch("/:id/toggle", authMiddleware, async (req, res) => {
   try {
-    const dailyGoal = await DailyGoal.findOne({ _id: req.params.id, user: req.user.id });
-    if (!dailyGoal) return res.status(404).json({ error: 'DailyGoal not found' });
+    const userId = Number(req.user.id);
+    const goalId = Number(req.params.id);
 
-    dailyGoal.completed = !dailyGoal.completed;
-    await dailyGoal.save();
-    res.json(dailyGoal);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ✅ Delete daily goal
-router.delete('/:id', authMiddleware, async (req, res) => {
-  try {
-    const dailyGoal = await DailyGoal.findOneAndDelete({ _id: req.params.id, user: req.user.id });
-    if (!dailyGoal) return res.status(404).json({ error: 'DailyGoal not found' });
-    res.json({ message: 'DailyGoal deleted' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ✅ Get completed daily goals count
-router.get('/completed/count', authMiddleware, async (req, res) => {
-  try {
-    const count = await DailyGoal.countDocuments({
-      user: req.user.id,
-      completed: true,
+    const goal = await prisma.daily_goals.findFirst({
+      where: { id: goalId, user_id: userId },
     });
-    res.json({ completedCount: count });
+
+    if (!goal) return res.status(404).json({ error: "Daily goal not found" });
+
+    const updatedGoal = await prisma.daily_goals.update({
+      where: { id: goalId },
+      data: {
+        completed: goal.completed ? 0 : 1,
+        updated_at: new Date(),
+      },
+    });
+
+    console.log("✅ Goal toggled:", updatedGoal);
+    res.json(formatGoalResponse(updatedGoal));
   } catch (err) {
+    console.error("❌ Error toggling goal:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-
-
-// Add this route to your backend/routes/dailyGoals.js file
-
-// ✅ Get weekly goals status (for dashboard weekly progress)
-router.get('/weekly/status', authMiddleware, async (req, res) => {
+// ✅ Delete a daily goal
+router.delete("/:id", authMiddleware, async (req, res) => {
   try {
-    // Get the start of the current week (Monday)
+    const userId = Number(req.user.id);
+    const goalId = Number(req.params.id);
+
+    const deleted = await prisma.daily_goals.deleteMany({
+      where: { id: goalId, user_id: userId },
+    });
+
+    if (deleted.count === 0)
+      return res.status(404).json({ error: "Daily goal not found" });
+
+    console.log("✅ Goal deleted successfully");
+    res.json({ message: "Daily goal deleted" });
+  } catch (err) {
+    console.error("❌ Error deleting goal:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ Get count of completed goals
+router.get("/completed/count", authMiddleware, async (req, res) => {
+  try {
+    const userId = Number(req.user.id);
+
+    const completedCount = await prisma.daily_goals.count({
+      where: { user_id: userId, completed: 1 },
+    });
+
+    res.json({ completedCount });
+  } catch (err) {
+    console.error("❌ Error getting completed goals count:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ Weekly goals summary
+router.get("/weekly/status", authMiddleware, async (req, res) => {
+  try {
+    const userId = Number(req.user.id);
+
     const today = new Date();
-    const currentDay = today.getDay();
     const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+    startOfWeek.setDate(today.getDate() - today.getDay());
     startOfWeek.setHours(0, 0, 0, 0);
 
-    // Get the end of the week (Sunday)
     const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6);
-    endOfWeek.setHours(23, 59, 59, 999);
+    endOfWeek.setDate(startOfWeek.getDate() + 7);
 
-    // Fetch all goals for this week
-    // const weeklyGoals = await DailyGoal.find({
-    //   user: req.user.id,
-    //   date: { $gte: startOfWeek, $lte: endOfWeek },
-    // });
-    const weeklyGoals = await DailyGoal.find({
-  user: req.user.id,
-  createdAt: { $gte: startOfWeek, $lte: endOfWeek },
-});
+    const goals = await prisma.daily_goals.findMany({
+      where: {
+        user_id: userId,
+        created_at: {
+          gte: startOfWeek,
+          lt: endOfWeek,
+        },
+      },
+    });
 
-
-    // Group goals by date and calculate completion status
     const weekStatus = [];
     for (let i = 0; i < 7; i++) {
       const day = new Date(startOfWeek);
       day.setDate(startOfWeek.getDate() + i);
-      const dayStart = new Date(day);
-      dayStart.setHours(0, 0, 0, 0);
-      const dayEnd = new Date(day);
-      dayEnd.setHours(23, 59, 59, 999);
+      const dateStr = day.toISOString().slice(0, 10);
 
-      const dayGoals = weeklyGoals.filter(goal => {
-        const goalDate = new Date(goal.createdAt);
-        return goalDate >= dayStart && goalDate <= dayEnd;
-      });
+      const dayGoals = goals.filter(
+        (g) => g.created_at.toISOString().slice(0, 10) === dateStr
+      );
+      const total = dayGoals.length;
+      const completed = dayGoals.filter((g) => g.completed).length;
 
-      const totalGoals = dayGoals.length;
-      const completedGoals = dayGoals.filter(goal => goal.completed).length;
-
-      // format local YYYY-MM-DD
-      const yyyy = day.getFullYear();
-      const mm = String(day.getMonth() + 1).padStart(2, '0');
-      const dd = String(day.getDate()).padStart(2, '0');
       weekStatus.push({
-        date: `${yyyy}-${mm}-${dd}`,
-        totalGoals,
-        completedGoals,
-        allCompleted: totalGoals > 0 && completedGoals === totalGoals,
-        hasIncomplete: totalGoals > 0 && completedGoals < totalGoals,
+        date: dateStr,
+        totalGoals: total,
+        completedGoals: completed,
+        allCompleted: total > 0 && completed === total,
+        hasIncomplete: total > 0 && completed < total,
       });
     }
 
     res.json(weekStatus);
   } catch (err) {
-    console.error('Error fetching weekly status:', err);
+    console.error("❌ Error fetching weekly status:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// IMPORTANT: Add this route BEFORE the '/:id/toggle' route in your dailyGoals.js file
-// to avoid route conflicts. Place it after the '/completed/count' route.
-
 module.exports = router;
+
+

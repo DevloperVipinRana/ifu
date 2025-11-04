@@ -1,233 +1,281 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const User = require('../models/User');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const multer = require("multer");
+const path = require("path");
+const nodemailer = require("nodemailer");
+const crypto = require("crypto");
+const prisma = require("../prismaClient");
 
-const multer = require('multer');
-const path = require('path');
-
-const Otp = require('../models/Otp');
-const nodemailer = require('nodemailer');
-const crypto = require('crypto');
-
-// 1️⃣ Configure storage
+// ========== Multer setup for profile uploads ==========
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/'); // Folder where images will be stored
-  },
+  destination: (req, file, cb) => cb(null, "uploads/"),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    cb(null, req.user.id + '_' + Date.now() + ext); // unique filename
+    const userId = req.user ? req.user.id : "temp";
+    cb(null, `${userId}_${Date.now()}${ext}`);
   },
 });
 
-const upload = multer({ storage });
+const fileFilter = (req, file, cb) => {
+  const allowedTypes = /jpeg|jpg|png|gif/;
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = allowedTypes.test(file.mimetype);
+  if (mimetype && extname) return cb(null, true);
+  cb(new Error("Only image files are allowed!"));
+};
 
-// Middleware to check auth
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+// ========== Auth Middleware ==========
 const authMiddleware = (req, res, next) => {
-  const token = req.header('Authorization');
-  if (!token) return res.status(401).json({ message: 'No token, authorization denied' });
+  const token = req.header("Authorization");
+  if (!token) return res.status(401).json({ message: "No token, authorization denied" });
 
   try {
     const decoded = jwt.verify(token.replace("Bearer ", ""), process.env.JWT_SECRET);
-    req.user = decoded; // user.id from token
+    req.user = decoded;
     next();
-  } catch (err) {
-    res.status(401).json({ message: 'Invalid token' });
+  } catch {
+    res.status(401).json({ message: "Invalid token" });
   }
 };
 
-
-// Nodemailer transporter
+// ========== Nodemailer Setup ==========
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com', // or your SMTP host
-  port: 465, // 587 for TLS
-  secure: true, // true for 465, false for 587
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
 });
 
-
-router.post('/request-otp', async (req, res) => {
-
+// ========== Request OTP ==========
+router.post("/request-otp", async (req, res) => {
   const { email } = req.body;
-
   try {
-    // Generate OTP
     const otpCode = crypto.randomInt(1000, 9999).toString();
-    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Save OTP in DB
-    await Otp.create({ email, code: otpCode, expiresAt: otpExpiry });
+    await prisma.verification_codes.deleteMany({ where: { email } });
 
-    // Send OTP via email
+    await prisma.verification_codes.create({
+      data: { email, code: otpCode, expires_at: otpExpiry, verified: 0 },
+    });
+
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
-      subject: 'Your OTP Code',
+      subject: "Your OTP Code",
       text: `Your verification code is ${otpCode}. It expires in 10 minutes.`,
     });
 
-    res.status(200).json({ message: 'OTP sent to email', email });
+    res.status(200).json({ message: "OTP sent to email", email });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error in /request-otp:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
+// ========== Verify OTP ==========
+router.post("/verify-otp", async (req, res) => {
+  const { email, code } = req.body;
+  try {
+    const record = await prisma.verification_codes.findFirst({
+      where: { email, code, expires_at: { gt: new Date() } },
+    });
 
-router.post('/signup', async (req, res) => {
-  const { name, email, password, zipCode, gender, timezone } = req.body;
+    if (!record) return res.status(400).json({ message: "Invalid or expired OTP" });
+
+    await prisma.verification_codes.updateMany({
+      where: { email },
+      data: { verified: 1 },
+    });
+
+    res.json({ message: "OTP verified successfully" });
+  } catch (err) {
+    console.error("Error in /verify-otp:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+// ========== Signup ==========
+router.post("/signup", async (req, res) => {
+  const { name, email, password, zip_code, gender, timezone } = req.body;
 
   try {
-    if (!password || password.length < 5) {
-      return res.status(400).json({ message: 'Password must be at least 5 characters long' });
-    }
+    const verifiedOTP = await prisma.verification_codes.findFirst({
+      where: { email, verified: 1 },
+    });
+    if (!verifiedOTP) return res.status(400).json({ message: "Please verify your email first" });
 
-    let user = await User.findOne({ email });
-    if (user) return res.status(400).json({ message: 'User already exists' });
+    const existingUser = await prisma.users.findUnique({ where: { email } });
+    if (existingUser) {
+      await prisma.verification_codes.deleteMany({ where: { email } });
+      return res.status(400).json({ message: "User already exists" });
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user but mark as unverified (until OTP step)
-    user = new User({
-      name,
-      email,
-      password: hashedPassword,
-      zipCode,
-      gender,
-      timezone,
-      verified: false,
-    });
-    await user.save();
-
-    // Generate JWT
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1d",
+    const user = await prisma.users.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+        zip_code,
+        gender,
+        timezone,
+        profile_completed: 0,
+      },
     });
 
-    // ✅ Return full user object
+    await prisma.verification_codes.deleteMany({ where: { email } });
+
+    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: "1d" });
+
     res.status(201).json({
       message: "User registered successfully",
       token,
+      user: { id: user.id, name, email, gender, zip_code, timezone },
+    });
+  } catch (err) {
+    console.error("Error in /signup:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+// ========== Login ==========
+router.post("/login", async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    const user = await prisma.users.findUnique({ where: { email } });
+    if (!user) return res.status(400).json({ message: "Invalid credentials" });
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
+
+    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: "1d" });
+
+    res.json({
+      token,
       user: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
-        gender: user.gender,
-        zipCode: user.zipCode,
-        timezone: user.timezone,
-        verified: user.verified,
+        profileCompleted: user.profile_completed,
       },
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Error in /login:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
+// ========== Update Profile ==========
+router.put(
+  "/profile",
+  authMiddleware,
+  (req, res, next) => {
+    upload.any()(req, res, (err) => {
+      if (err) return res.status(400).json({ message: err.message });
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      const userId = Number(req.user.id);
+      const fields = { ...req.body };
 
+      // Map frontend → DB columns
+      const mapping = {
+        ageGroup: "age_group",
+        zipCode: "zip_code",
+        musicTaste: "music_taste",
+        phoneUsage: "phone_usage",
+        favMusician: "fav_musician",
+        favSports: "fav_sports",
+        indoorTime: "indoor_time",
+        outdoorTime: "outdoor_time",
+        favWork: "fav_work",
+        favPlace: "fav_place",
+        movieGenre: "movie_genre",
+        likesToTravel: "likes_to_travel",
+        profileImage: "profile_image",
+      };
 
-// ---------------- VERIFY OTP ----------------
-router.post('/verify-otp', async (req, res) => {
-  const { email, code } = req.body;
+      const data = {};
+      for (const key in fields) {
+        const dbKey = mapping[key] || key;
+        data[dbKey] = fields[key];
+      }
 
-  try {
-    const otpEntry = await Otp.findOne({ email, code });
-    if (!otpEntry) return res.status(400).json({ message: 'Invalid OTP' });
-    if (otpEntry.expiresAt < new Date()) return res.status(400).json({ message: 'OTP expired' });
+      // Parse JSON fields
+      ["interests", "goals"].forEach((k) => {
+        if (data[k]) {
+          try {
+            data[k] = JSON.stringify(JSON.parse(data[k]));
+          } catch {
+            data[k] = "[]";
+          }
+        }
+      });
 
-    // Mark user as verified
-    await User.findOneAndUpdate({ email }, { verified: true });
+      // Handle booleans
+      if (data.likes_to_travel)
+        data.likes_to_travel =
+          data.likes_to_travel === "1" || data.likes_to_travel === "true" ? 1 : 0;
 
-    // Delete OTP after successful verification
-    await Otp.deleteOne({ _id: otpEntry._id });
+      // Handle image upload
+      if (req.files?.length > 0) {
+        const imageFile = req.files.find((f) => f.fieldname === "profile_image");
+        if (imageFile) data.profile_image = `/uploads/${imageFile.filename}`;
+      }
 
-    res.json({ message: 'OTP verified successfully' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
+      // Mark profile as completed
+      data.profile_completed = 1;
 
+      const updated = await prisma.users.update({
+        where: { id: userId },
+        data,
+      });
 
-// LOGIN
-router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-
-  try {
-    const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ message: 'Invalid credentials' });
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
-
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
-    res.json({ token, user: { id: user._id, name: user.name, email, profileCompleted: user.profileCompleted } });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// ✅ Update profile
-router.put('/profile', authMiddleware, upload.single('profileImage'), async (req, res) => {
-  try {
-    const {
-      bio, interests, goals, occupation, ageGroup, address,
-      hobbies, musicTaste, phoneUsage, favMusician, favSports,
-      indoorTime, outdoorTime, favWork, favPlace,
-      personality, movieGenre, likesToTravel, profileCompleted
-    } = req.body;
-
-    // Handle profile image
-    let profileImageUrl;
-    if (req.file) {
-      profileImageUrl = `/uploads/${req.file.filename}`;
+      res.json(updated);
+    } catch (err) {
+      console.error("Error in /profile update:", err);
+      res.status(500).json({ message: "Server error", error: err.message });
     }
-
-    const updatedUser = await User.findByIdAndUpdate(
-      req.user.id,
-      {
-        bio, interests, goals, occupation, ageGroup, address,
-        hobbies, musicTaste, phoneUsage, favMusician, favSports,
-        indoorTime, outdoorTime, favWork, favPlace,
-        personality, movieGenre, likesToTravel,
-        profileCompleted: profileCompleted ?? true,
-        ...(profileImageUrl && { profileImage: profileImageUrl })
-      },
-      { new: true }
-    );
-
-    res.json(updatedUser);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
   }
-});
+);
 
-// ✅ Get profile
-router.get('/profile', authMiddleware, async (req, res) => {
+// ========== Get Profile ==========
+router.get("/profile", authMiddleware, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password'); // exclude password
+    const user = await prisma.users.findUnique({ where: { id: req.user.id } });
     res.json(user);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error in /profile get:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
-router.get('/me', authMiddleware, async (req, res) => {
+// ========== Get Current User ==========
+router.get("/me", authMiddleware, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await prisma.users.findUnique({ where: { id: req.user.id } });
     res.json(user);
   } catch (err) {
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error in /me:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
-module.exports = router;       // For routes
-module.exports.authMiddleware = authMiddleware; // For middleware
+module.exports = router;
+module.exports.authMiddleware = authMiddleware;
+

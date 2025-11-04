@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Text, TextInput, Keyboard } from 'react-native';
+import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Text, TextInput, Keyboard, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
@@ -108,6 +108,7 @@ const PraiseFeedScreen = () => {
       setLoading(false);
     }
   };
+
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);

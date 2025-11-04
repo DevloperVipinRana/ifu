@@ -37,6 +37,9 @@ app.use("/api/posts", postRoutes);
 const icompletedRoutes = require('./routes/icompleted');
 app.use('/api/icompleted', icompletedRoutes);
 
+const notificationRoutes = require('./routes/notifications');
+app.use('/api/notifications', notificationRoutes);
+
 // Start server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

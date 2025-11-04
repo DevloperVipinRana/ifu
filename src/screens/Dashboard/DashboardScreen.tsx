@@ -11,6 +11,8 @@ import {
   ImageBackground,
   Modal,
   Pressable,
+  Image,
+  Animated,
 } from 'react-native';
 import { ScreenTitle, Body } from '../../components/common/StyledText';
 import { colors } from '../../theme/color1.js';
@@ -24,39 +26,40 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { BASE_URL } from '@env';
 
+// ... [Keep all your types the same] ...
+
 type GradientColors = string[];
-
 type WeekDayProgress = 'empty' | 'complete' | 'incomplete';
-
 type WeekDayStatus = {
   dayOfWeek: string;
   date: number;
   isToday: boolean;
   progress: WeekDayProgress;
 };
-
 type DynamicHeaderProps = { 
-  onMenuPress: () => void; 
+  onProfilePress: () => void; 
   userName: string;
+  profileImage?: string;
 };
-
 type ToolButtonProps = {
   iconName: string;
   gradient: GradientColors;
   label: string;
   onPress: () => void;
 };
-
 type ProgressCardProps = {
   completed: number;
   total: number;
   loading: boolean;
   error: boolean;
 };
-
 type RecentWin = { _id: string; image?: string; achievementText: string };
-
 type RecentWinsSectionProps = { wins: RecentWin[]; loading: boolean; error: boolean };
+type UserProfile = {
+  name: string;
+  bio?: string;
+  profileImage?: string;
+};
 
 const menuItems = [
   {
@@ -109,13 +112,12 @@ const menuItems = [
   },
 ];
 
-// --- API Service ---
+// ... [Keep all your API functions the same] ...
+
 const fetchDailyGoals = async () => {
   try {
     const token = await AsyncStorage.getItem('token');
-    if (!token) {
-      throw new Error('No auth token found');
-    }
+    if (!token) throw new Error('No auth token found');
 
     const response = await fetch(`${BASE_URL}/api/dailygoals`, {
       method: 'GET',
@@ -125,12 +127,8 @@ const fetchDailyGoals = async () => {
       },
     });
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch daily goals');
-    }
-
-    const data = await response.json();
-    return data;
+    if (!response.ok) throw new Error('Failed to fetch daily goals');
+    return await response.json();
   } catch (error) {
     console.error('Error fetching daily goals:', error);
     throw error;
@@ -140,9 +138,7 @@ const fetchDailyGoals = async () => {
 const fetchUserProfile = async () => {
   try {
     const token = await AsyncStorage.getItem('token');
-    if (!token) {
-      throw new Error('No auth token found');
-    }
+    if (!token) throw new Error('No auth token found');
 
     const response = await fetch(`${BASE_URL}/api/auth/me`, {
       method: 'GET',
@@ -152,12 +148,8 @@ const fetchUserProfile = async () => {
       },
     });
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch user profile');
-    }
-
-    const data = await response.json();
-    return data;
+    if (!response.ok) throw new Error('Failed to fetch user profile');
+    return await response.json();
   } catch (error) {
     console.error('Error fetching user profile:', error);
     throw error;
@@ -165,12 +157,9 @@ const fetchUserProfile = async () => {
 };
 
 const fetchRecentWins = async () => {
-  
   try {
     const token = await AsyncStorage.getItem('token');
-    if (!token) {
-      throw new Error('No auth token found');
-    }
+    if (!token) throw new Error('No auth token found');
 
     const response = await fetch(`${BASE_URL}/api/icompleted/my`, {
       method: 'GET',
@@ -180,12 +169,8 @@ const fetchRecentWins = async () => {
       },
     });
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch recent wins');
-    }
-
+    if (!response.ok) throw new Error('Failed to fetch recent wins');
     const data = await response.json();
-    // Return only the last 3 wins
     return data.slice(0, 3);
   } catch (error) {
     console.error('Error fetching recent wins:', error);
@@ -196,10 +181,7 @@ const fetchRecentWins = async () => {
 const fetchWeeklyGoalsStatus = async () => {
   try {
     const token = await AsyncStorage.getItem('token');
-    console.log('token=', token);
-    if (!token) {
-      throw new Error('No auth token found');
-    }
+    if (!token) throw new Error('No auth token found');
 
     const response = await fetch(`${BASE_URL}/api/dailygoals/weekly/status`, {
       method: 'GET',
@@ -209,12 +191,8 @@ const fetchWeeklyGoalsStatus = async () => {
       },
     });
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch weekly goals status');
-    }
-
-    const data = await response.json();
-    return data;
+    if (!response.ok) throw new Error('Failed to fetch weekly goals status');
+    return await response.json();
   } catch (error) {
     console.error('Error fetching weekly goals status:', error);
     throw error;
@@ -226,9 +204,7 @@ type WeeklyGoal = { _id: string; progress: number; completed: boolean };
 const fetchWeeklyGoals = async (): Promise<WeeklyGoal[]> => {
   try {
     const token = await AsyncStorage.getItem('token');
-    if (!token) {
-      throw new Error('No auth token found');
-    }
+    if (!token) throw new Error('No auth token found');
 
     const response = await fetch(`${BASE_URL}/api/weekly-goals`, {
       method: 'GET',
@@ -238,12 +214,8 @@ const fetchWeeklyGoals = async (): Promise<WeeklyGoal[]> => {
       },
     });
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch weekly goals');
-    }
-
-    const data = await response.json();
-    return data;
+    if (!response.ok) throw new Error('Failed to fetch weekly goals');
+    return await response.json();
   } catch (error) {
     console.error('Error fetching weekly goals:', error);
     return [];
@@ -252,7 +224,7 @@ const fetchWeeklyGoals = async (): Promise<WeeklyGoal[]> => {
 
 // --- REUSABLE SUB-COMPONENTS ---
 
-const DynamicHeader = ({ onMenuPress, userName }: DynamicHeaderProps) => {
+const DynamicHeader = ({ onProfilePress, userName, profileImage }: DynamicHeaderProps) => {
   const [greeting, setGreeting] = useState('');
 
   useEffect(() => {
@@ -264,14 +236,29 @@ const DynamicHeader = ({ onMenuPress, userName }: DynamicHeaderProps) => {
     else setGreeting(`Good Evening, ${displayName}! 🌙`);
   }, [userName]);
 
+  // Construct full image URL
+  const imageUrl = profileImage && profileImage.startsWith('/') 
+    ? `${BASE_URL}${profileImage}` 
+    : profileImage;
+
   return (
     <View style={styles.header}>
       <View>
         <ScreenTitle style={styles.headerTitle}>IFU</ScreenTitle>
         <Body style={styles.greeting}>{greeting}</Body>
       </View>
-      <TouchableOpacity onPress={onMenuPress} style={styles.menuButton}>
-        <Icon name="menu-outline" size={40} color={colors.text.primary} />
+      <TouchableOpacity onPress={onProfilePress} style={styles.profileButton}>
+        {imageUrl ? (
+          <Image 
+            source={{ uri: imageUrl }} 
+            style={styles.profileImage}
+            onError={(e) => console.log('Header image load error:', e.nativeEvent.error)}
+          />
+        ) : (
+          <View style={styles.profileImagePlaceholder}>
+            <Icon name="person" size={24} color={colors.text.primary} />
+          </View>
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -385,7 +372,7 @@ const RecentWinsSection = ({ wins, loading, error }: RecentWinsSectionProps) => 
 const HomeScreen = () => {
   const navigation = useNavigation();
   const [dailyProgress, setDailyProgress] = useState({ completed: 0, total: 0 });
-  const [userName, setUserName] = useState('');
+  const [userProfile, setUserProfile] = useState<UserProfile>({ name: '', bio: '', profileImage: '' });
   const [recentWins, setRecentWins] = useState<RecentWin[]>([]);
   const [weekData, setWeekData] = useState<WeekDayStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -394,7 +381,8 @@ const HomeScreen = () => {
   const [winsError, setWinsError] = useState(false);
   const [weekLoading, setWeekLoading] = useState(true);
   const [weeklyGoals, setWeeklyGoals] = useState<WeeklyGoal[]>([]);
-  const [menuVisible, setMenuVisible] = useState(false);
+  const [drawerVisible, setDrawerVisible] = useState(false);
+  const [slideAnim] = useState(new Animated.Value(400));
 
   const loadDailyGoals = async () => {
     try {
@@ -421,10 +409,17 @@ const HomeScreen = () => {
   const loadUserProfile = async () => {
     try {
       const userData = await fetchUserProfile();
-      setUserName(userData.name || 'User');
+      console.log('User profile data received:', userData);
+      console.log('Profile image path:', userData.profile_image);
+      
+      setUserProfile({
+        name: userData.name || 'User',
+        bio: userData.bio || 'No bio available',
+        profileImage: userData.profile_image || '',
+      });
     } catch (err) {
       console.error('Error loading user profile:', err);
-      setUserName('User');
+      setUserProfile({ name: 'User', bio: 'No bio available', profileImage: '' });
     }
   };
 
@@ -457,7 +452,6 @@ const HomeScreen = () => {
       for (let i = 0; i < 7; i++) {
         const day = new Date(startOfWeek);
         day.setDate(startOfWeek.getDate() + i);
-        // Build local YYYY-MM-DD to match backend
         const yyyy = day.getFullYear();
         const mm = String(day.getMonth() + 1).padStart(2, '0');
         const dd = String(day.getDate()).padStart(2, '0');
@@ -491,7 +485,6 @@ const HomeScreen = () => {
       setWeekData(formattedWeekData);
     } catch (err) {
       console.error('Error loading weekly goals status:', err);
-      // Fallback to empty week data
       const today = new Date();
       const currentDay = today.getDay();
       const startOfWeek = new Date(today);
@@ -523,7 +516,6 @@ const HomeScreen = () => {
     setWeeklyGoals(goals);
   };
 
-  // Load data when component mounts
   useEffect(() => {
     loadDailyGoals();
     loadUserProfile();
@@ -532,7 +524,6 @@ const HomeScreen = () => {
     loadWeeklyGoals();
   }, []);
 
-  // Reload data when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
       loadDailyGoals();
@@ -551,21 +542,39 @@ const HomeScreen = () => {
   const handleLogout = async () => {
     try {
       await AsyncStorage.removeItem('token');
-      setMenuVisible(false);
+      closeDrawer();
       navigation.navigate('Login' as never);
     } catch (error) {
       console.error('Error logging out:', error);
     }
   };
 
-  const handleMenuItemPress = (screen: string) => {
-    setMenuVisible(false);
-    if (screen === 'Logout') {
-      handleLogout();
-    } else {
-      handlePress(screen);
-    }
+  const openDrawer = () => {
+    setDrawerVisible(true);
+    Animated.timing(slideAnim, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
   };
+
+  const closeDrawer = () => {
+    Animated.timing(slideAnim, {
+      toValue: 400,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => setDrawerVisible(false));
+  };
+
+  const handleYourPosts = () => {
+    closeDrawer();
+    navigation.navigate('UserPosts' as never);
+  };
+
+  // Construct full image URL for drawer
+  const drawerImageUrl = userProfile.profileImage && userProfile.profileImage.startsWith('/') 
+    ? `${BASE_URL}${userProfile.profileImage}` 
+    : userProfile.profileImage;
 
   return (
     <LinearGradient colors={['#F7F8FF', '#EAF2FF']} style={styles.container}>
@@ -573,7 +582,11 @@ const HomeScreen = () => {
       <SafeAreaView style={styles.safeArea}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContentContainer}>
 
-          <DynamicHeader onMenuPress={() => setMenuVisible(true)} userName={userName} />
+          <DynamicHeader 
+            onProfilePress={openDrawer} 
+            userName={userProfile.name}
+            profileImage={userProfile.profileImage}
+          />
 
           <FeaturedCarousel/>
 
@@ -648,46 +661,82 @@ const HomeScreen = () => {
         </ScrollView>
       </SafeAreaView>
 
-      {/* Hamburger Menu Modal */}
+      {/* Side Drawer Modal */}
       <Modal
-        visible={menuVisible}
+        visible={drawerVisible}
         transparent={true}
-        animationType="fade"
-        onRequestClose={() => setMenuVisible(false)}
+        animationType="none"
+        onRequestClose={closeDrawer}
       >
         <Pressable 
-          style={styles.modalOverlay} 
-          onPress={() => setMenuVisible(false)}
+          style={styles.drawerOverlay} 
+          onPress={closeDrawer}
         >
-          <View style={styles.menuContainer}>
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleMenuItemPress('Profile')}
-            >
-              <Icon name="person-outline" size={24} color={colors.text.primary} />
-              <Text style={styles.menuItemText}>Profile</Text>
-            </TouchableOpacity>
+          <Animated.View 
+            style={[
+              styles.drawerContainer,
+              { transform: [{ translateX: slideAnim }] }
+            ]}
+          >
+            <Pressable onPress={(e) => e.stopPropagation()}>
+              {/* Close Button */}
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={closeDrawer}
+              >
+                <Icon name="close" size={28} color={colors.text.primary} />
+              </TouchableOpacity>
 
-            <View style={styles.menuDivider} />
+              {/* Profile Section */}
+              <View style={styles.drawerProfileSection}>
+                {drawerImageUrl ? (
+                  <Image 
+                    source={{ uri: drawerImageUrl }} 
+                    style={styles.drawerProfileImage}
+                    onError={(e) => {
+                      console.log('Drawer image load error:', e.nativeEvent.error);
+                      console.log('Attempted URL:', drawerImageUrl);
+                    }}
+                  />
+                ) : (
+                  <View style={styles.drawerProfileImagePlaceholder}>
+                    <Icon name="person" size={60} color={colors.text.primary} />
+                  </View>
+                )}
+                <Text style={styles.drawerUserName}>{userProfile.name}</Text>
+                <Text style={styles.drawerUserBio}>{userProfile.bio}</Text>
+              </View>
 
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleMenuItemPress('UserPosts')}
-            >
-              <Icon name="trophy-outline" size={24} color={colors.text.primary} />
-              <Text style={styles.menuItemText}>Your Posts</Text>
-            </TouchableOpacity>
+            </Pressable>
+            {/* Bottom Buttons */}
+              <View style={styles.drawerBottomButtons}>
+                <TouchableOpacity 
+                    style={styles.drawerButton}
+                    onPress={() => {
+                      closeDrawer();
+                      navigation.navigate('EditProfileScreen' as never);
+                    }}
+                  >
+                    <Icon name="create-outline" size={24} color="white" />
+                    <Text style={styles.drawerButtonText}>Edit Profile</Text>
+                  </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.drawerButton}
+                  onPress={handleYourPosts}
+                >
+                  <Icon name="trophy-outline" size={24} color="white" />
+                  <Text style={styles.drawerButtonText}>Your Posts</Text>
+                </TouchableOpacity>
 
-            <View style={styles.menuDivider} />
-
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => handleMenuItemPress('Logout')}
-            >
-              <Icon name="log-out-outline" size={24} color="#EF4444" />
-              <Text style={[styles.menuItemText, { color: '#EF4444' }]}>Logout</Text>
-            </TouchableOpacity>
-          </View>
+                <TouchableOpacity 
+                  style={[styles.drawerButton, styles.logoutButton]}
+                  onPress={handleLogout}
+                >
+                  <Icon name="log-out-outline" size={24} color="white" />
+                  <Text style={styles.drawerButtonText}>Logout</Text>
+                </TouchableOpacity>
+              </View>
+          </Animated.View>
         </Pressable>
       </Modal>
     </LinearGradient>
@@ -725,8 +774,25 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginLeft: 90,
   },
-  menuButton: {
+  profileButton: {
     padding: 4,
+  },
+  profileImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: colors.text.primary,
+  },
+  profileImagePlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#E0F2FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.text.primary,
   },
   sectionContainer: {
     marginTop: 30,
@@ -919,41 +985,99 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalOverlay: {
+  drawerOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-start',
     alignItems: 'flex-end',
-    paddingTop: 70,
-    paddingRight: 20,
   },
-  menuContainer: {
+  drawerContainer: {
+    width: 320,
+    height: '100%',
     backgroundColor: 'white',
-    borderRadius: 15,
-    padding: 8,
-    minWidth: 200,
     elevation: 8,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: -2, height: 0 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
   },
-  menuItem: {
+  closeButton: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    zIndex: 10,
+    padding: 8,
+  },
+  drawerProfileSection: {
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingBottom: 30,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  drawerProfileImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 3,
+    borderColor: colors.text.primary,
+    marginBottom: 16,
+  },
+  drawerProfileImagePlaceholder: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#E0F2FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: colors.text.primary,
+    marginBottom: 16,
+  },
+  drawerUserName: {
+    fontSize: 24,
+    fontFamily: 'Inter-Bold',
+    color: colors.text.primary,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  drawerUserBio: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  drawerBottomButtons: {
+    position: 'absolute',
+    bottom: 40,
+    left: 20,
+    right: 20,
+  },
+  drawerButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0284C7',
     paddingVertical: 16,
-    paddingHorizontal: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  menuItemText: {
+  logoutButton: {
+    backgroundColor: '#EF4444',
+  },
+  drawerButtonText: {
     fontSize: 16,
-    fontFamily: 'Inter-Medium',
-    color: colors.text.primary,
-    marginLeft: 16,
-  },
-  menuDivider: {
-    height: 1,
-    backgroundColor: '#E5E7EB',
-    marginHorizontal: 12,
+    fontFamily: 'Inter-Bold',
+    color: 'white',
+    marginLeft: 12,
   },
 });
 
@@ -973,6 +1097,10 @@ export default HomeScreen;
 //   Text,
 //   ActivityIndicator,
 //   ImageBackground,
+//   Modal,
+//   Pressable,
+//   Image,
+//   Animated,
 // } from 'react-native';
 // import { ScreenTitle, Body } from '../../components/common/StyledText';
 // import { colors } from '../../theme/color1.js';
@@ -997,7 +1125,11 @@ export default HomeScreen;
 //   progress: WeekDayProgress;
 // };
 
-// type DynamicHeaderProps = { onProfilePress: () => void; userName: string };
+// type DynamicHeaderProps = { 
+//   onProfilePress: () => void; 
+//   userName: string;
+//   profileImage?: string;
+// };
 
 // type ToolButtonProps = {
 //   iconName: string;
@@ -1016,6 +1148,12 @@ export default HomeScreen;
 // type RecentWin = { _id: string; image?: string; achievementText: string };
 
 // type RecentWinsSectionProps = { wins: RecentWin[]; loading: boolean; error: boolean };
+
+// type UserProfile = {
+//   name: string;
+//   bio?: string;
+//   profileImage?: string;
+// };
 
 // const menuItems = [
 //   {
@@ -1076,7 +1214,7 @@ export default HomeScreen;
 //       throw new Error('No auth token found');
 //     }
 
-//     const response = await fetch(`${BASE_URL}/api/dailyGoals`, {
+//     const response = await fetch(`${BASE_URL}/api/dailygoals`, {
 //       method: 'GET',
 //       headers: {
 //         'Authorization': `Bearer ${token}`,
@@ -1160,7 +1298,7 @@ export default HomeScreen;
 //       throw new Error('No auth token found');
 //     }
 
-//     const response = await fetch(`${BASE_URL}/api/dailyGoals/weekly/status`, {
+//     const response = await fetch(`${BASE_URL}/api/dailygoals/weekly/status`, {
 //       method: 'GET',
 //       headers: {
 //         'Authorization': `Bearer ${token}`,
@@ -1211,7 +1349,7 @@ export default HomeScreen;
 
 // // --- REUSABLE SUB-COMPONENTS ---
 
-// const DynamicHeader = ({ onProfilePress, userName }: DynamicHeaderProps) => {
+// const DynamicHeader = ({ onProfilePress, userName, profileImage }: DynamicHeaderProps) => {
 //   const [greeting, setGreeting] = useState('');
 
 //   useEffect(() => {
@@ -1229,8 +1367,17 @@ export default HomeScreen;
 //         <ScreenTitle style={styles.headerTitle}>IFU</ScreenTitle>
 //         <Body style={styles.greeting}>{greeting}</Body>
 //       </View>
-//       <TouchableOpacity onPress={onProfilePress}>
-//         <Icon name="person-circle-outline" size={40} color={colors.text.primary} />
+//       <TouchableOpacity onPress={onProfilePress} style={styles.profileButton}>
+//         {profileImage ? (
+//           <Image 
+//             source={{ uri: `${BASE_URL}${profileImage}` }} 
+//             style={styles.profileImage}
+//           />
+//         ) : (
+//           <View style={styles.profileImagePlaceholder}>
+//             <Icon name="person" size={24} color={colors.text.primary} />
+//           </View>
+//         )}
 //       </TouchableOpacity>
 //     </View>
 //   );
@@ -1344,7 +1491,7 @@ export default HomeScreen;
 // const HomeScreen = () => {
 //   const navigation = useNavigation();
 //   const [dailyProgress, setDailyProgress] = useState({ completed: 0, total: 0 });
-//   const [userName, setUserName] = useState('');
+//   const [userProfile, setUserProfile] = useState<UserProfile>({ name: '', bio: '', profileImage: '' });
 //   const [recentWins, setRecentWins] = useState<RecentWin[]>([]);
 //   const [weekData, setWeekData] = useState<WeekDayStatus[]>([]);
 //   const [loading, setLoading] = useState(true);
@@ -1353,6 +1500,8 @@ export default HomeScreen;
 //   const [winsError, setWinsError] = useState(false);
 //   const [weekLoading, setWeekLoading] = useState(true);
 //   const [weeklyGoals, setWeeklyGoals] = useState<WeeklyGoal[]>([]);
+//   const [drawerVisible, setDrawerVisible] = useState(false);
+//   const [slideAnim] = useState(new Animated.Value(400));
 
 //   const loadDailyGoals = async () => {
 //     try {
@@ -1379,10 +1528,14 @@ export default HomeScreen;
 //   const loadUserProfile = async () => {
 //     try {
 //       const userData = await fetchUserProfile();
-//       setUserName(userData.name || 'User');
+//       setUserProfile({
+//         name: userData.name || 'User',
+//         bio: userData.bio || 'No bio available',
+//         profileImage: userData.profileImage || '',
+//       });
 //     } catch (err) {
 //       console.error('Error loading user profile:', err);
-//       setUserName('User');
+//       setUserProfile({ name: 'User', bio: 'No bio available', profileImage: '' });
 //     }
 //   };
 
@@ -1506,13 +1659,49 @@ export default HomeScreen;
 //     if (feature) navigation.navigate(feature as never);
 //   };
 
+//   const handleLogout = async () => {
+//     try {
+//       await AsyncStorage.removeItem('token');
+//       closeDrawer();
+//       navigation.navigate('Login' as never);
+//     } catch (error) {
+//       console.error('Error logging out:', error);
+//     }
+//   };
+
+//   const openDrawer = () => {
+//     setDrawerVisible(true);
+//     Animated.timing(slideAnim, {
+//       toValue: 0,
+//       duration: 300,
+//       useNativeDriver: true,
+//     }).start();
+//   };
+
+//   const closeDrawer = () => {
+//     Animated.timing(slideAnim, {
+//       toValue: 400,
+//       duration: 300,
+//       useNativeDriver: true,
+//     }).start(() => setDrawerVisible(false));
+//   };
+
+//   const handleYourPosts = () => {
+//     closeDrawer();
+//     navigation.navigate('UserPosts' as never);
+//   };
+
 //   return (
 //     <LinearGradient colors={['#F7F8FF', '#EAF2FF']} style={styles.container}>
 //       <StatusBar barStyle="dark-content" />
 //       <SafeAreaView style={styles.safeArea}>
 //         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContentContainer}>
 
-//           <DynamicHeader onProfilePress={() => handlePress('Profile')} userName={userName} />
+//           <DynamicHeader 
+//             onProfilePress={openDrawer} 
+//             userName={userProfile.name}
+//             profileImage={userProfile.profileImage}
+//           />
 
 //           <FeaturedCarousel/>
 
@@ -1586,6 +1775,71 @@ export default HomeScreen;
 
 //         </ScrollView>
 //       </SafeAreaView>
+
+//       {/* Side Drawer Modal */}
+//       <Modal
+//         visible={drawerVisible}
+//         transparent={true}
+//         animationType="none"
+//         onRequestClose={closeDrawer}
+//       >
+//         <Pressable 
+//           style={styles.drawerOverlay} 
+//           onPress={closeDrawer}
+//         >
+//           <Animated.View 
+//             style={[
+//               styles.drawerContainer,
+//               { transform: [{ translateX: slideAnim }] }
+//             ]}
+//           >
+//             <Pressable onPress={(e) => e.stopPropagation()}>
+//               {/* Close Button */}
+//               <TouchableOpacity 
+//                 style={styles.closeButton}
+//                 onPress={closeDrawer}
+//               >
+//                 <Icon name="close" size={28} color={colors.text.primary} />
+//               </TouchableOpacity>
+
+//               {/* Profile Section */}
+//               <View style={styles.drawerProfileSection}>
+//                 {userProfile.profileImage ? (
+//                   <Image 
+//                     source={{ uri: `${BASE_URL}${userProfile.profileImage}` }} 
+//                     style={styles.drawerProfileImage}
+//                   />
+//                 ) : (
+//                   <View style={styles.drawerProfileImagePlaceholder}>
+//                     <Icon name="person" size={60} color={colors.text.primary} />
+//                   </View>
+//                 )}
+//                 <Text style={styles.drawerUserName}>{userProfile.name}</Text>
+//                 <Text style={styles.drawerUserBio}>{userProfile.bio}</Text>
+//               </View>
+
+//             </Pressable>
+//             {/* Bottom Buttons */}
+//               <View style={styles.drawerBottomButtons}>
+//                 <TouchableOpacity 
+//                   style={styles.drawerButton}
+//                   onPress={handleYourPosts}
+//                 >
+//                   <Icon name="trophy-outline" size={24} color="white" />
+//                   <Text style={styles.drawerButtonText}>Your Posts</Text>
+//                 </TouchableOpacity>
+
+//                 <TouchableOpacity 
+//                   style={[styles.drawerButton, styles.logoutButton]}
+//                   onPress={handleLogout}
+//                 >
+//                   <Icon name="log-out-outline" size={24} color="white" />
+//                   <Text style={styles.drawerButtonText}>Logout</Text>
+//                 </TouchableOpacity>
+//               </View>
+//           </Animated.View>
+//         </Pressable>
+//       </Modal>
 //     </LinearGradient>
 //   );
 // };
@@ -1620,6 +1874,26 @@ export default HomeScreen;
 //     fontSize: 16,
 //     marginTop: 4,
 //     marginLeft: 90,
+//   },
+//   profileButton: {
+//     padding: 4,
+//   },
+//   profileImage: {
+//     width: 48,
+//     height: 48,
+//     borderRadius: 24,
+//     borderWidth: 2,
+//     borderColor: colors.text.primary,
+//   },
+//   profileImagePlaceholder: {
+//     width: 48,
+//     height: 48,
+//     borderRadius: 24,
+//     backgroundColor: '#E0F2FE',
+//     justifyContent: 'center',
+//     alignItems: 'center',
+//     borderWidth: 2,
+//     borderColor: colors.text.primary,
 //   },
 //   sectionContainer: {
 //     marginTop: 30,
@@ -1812,6 +2086,101 @@ export default HomeScreen;
 //     justifyContent: 'center',
 //     alignItems: 'center',
 //   },
+//   drawerOverlay: {
+//     flex: 1,
+//     backgroundColor: 'rgba(0, 0, 0, 0.5)',
+//     justifyContent: 'flex-start',
+//     alignItems: 'flex-end',
+//   },
+//   drawerContainer: {
+//     width: 320,
+//     height: '100%',
+//     backgroundColor: 'white',
+//     elevation: 8,
+//     shadowColor: '#000',
+//     shadowOffset: { width: -2, height: 0 },
+//     shadowOpacity: 0.3,
+//     shadowRadius: 8,
+//   },
+//   closeButton: {
+//     position: 'absolute',
+//     top: 20,
+//     right: 20,
+//     zIndex: 10,
+//     padding: 8,
+//   },
+//   drawerProfileSection: {
+//     alignItems: 'center',
+//     paddingTop: 60,
+//     paddingHorizontal: 20,
+//     paddingBottom: 30,
+//     borderBottomWidth: 1,
+//     borderBottomColor: '#E5E7EB',
+//   },
+//   drawerProfileImage: {
+//     width: 120,
+//     height: 120,
+//     borderRadius: 60,
+//     borderWidth: 3,
+//     borderColor: colors.text.primary,
+//     marginBottom: 16,
+//   },
+//   drawerProfileImagePlaceholder: {
+//     width: 120,
+//     height: 120,
+//     borderRadius: 60,
+//     backgroundColor: '#E0F2FE',
+//     justifyContent: 'center',
+//     alignItems: 'center',
+//     borderWidth: 3,
+//     borderColor: colors.text.primary,
+//     marginBottom: 16,
+//   },
+//   drawerUserName: {
+//     fontSize: 24,
+//     fontFamily: 'Inter-Bold',
+//     color: colors.text.primary,
+//     marginBottom: 8,
+//     textAlign: 'center',
+//   },
+//   drawerUserBio: {
+//     fontSize: 14,
+//     fontFamily: 'Inter-Regular',
+//     color: colors.text.secondary,
+//     textAlign: 'center',
+//     lineHeight: 20,
+//   },
+//   drawerBottomButtons: {
+//     position: 'absolute',
+//     bottom: 40,
+//     left: 20,
+//     right: 20,
+//   },
+//   drawerButton: {
+//     flexDirection: 'row',
+//     alignItems: 'center',
+//     justifyContent: 'center',
+//     backgroundColor: '#0284C7',
+//     paddingVertical: 16,
+//     paddingHorizontal: 24,
+//     borderRadius: 12,
+//     marginBottom: 12,
+//     elevation: 2,
+//     shadowColor: '#000',
+//     shadowOffset: { width: 0, height: 2 },
+//     shadowOpacity: 0.1,
+//     shadowRadius: 4,
+//   },
+//   logoutButton: {
+//     backgroundColor: '#EF4444',
+//   },
+//   drawerButtonText: {
+//     fontSize: 16,
+//     fontFamily: 'Inter-Bold',
+//     color: 'white',
+//     marginLeft: 12,
+//   },
 // });
 
 // export default HomeScreen;
+
