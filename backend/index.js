@@ -10,9 +10,9 @@ app.use(cors());
 app.use(express.json());
 
 // Connect MongoDB
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log('✅ MongoDB Connected'))
-  .catch(err => console.error('❌ MongoDB Connection Error:', err));
+// mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+//   .then(() => console.log('✅ MongoDB Connected'))
+//   .catch(err => console.error('❌ MongoDB Connection Error:', err));
 
 // Serve uploads folder (for profile images, etc.)
 app.use('/uploads', express.static('uploads'));
@@ -39,6 +39,9 @@ app.use('/api/icompleted', icompletedRoutes);
 
 const notificationRoutes = require('./routes/notifications');
 app.use('/api/notifications', notificationRoutes);
+
+const imagesRoutes = require('./routes/images');
+app.use('/api/images', imagesRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;

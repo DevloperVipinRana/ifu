@@ -73,7 +73,7 @@ const menuItems = [
   {
     id: '2',
     title: 'QUICK BLISS',
-    shortTitle: 'ACTIVITY',
+    shortTitle: '1-MINTASK',
     iconName: 'flower-outline',
     gradient: colors.gradient.passion,
     feature: 'RandomActivitySelector',

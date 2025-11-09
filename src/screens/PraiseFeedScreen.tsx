@@ -48,7 +48,7 @@ const PraiseFeedScreen = () => {
     const isOneMinute = Math.random() < 0.5;
     setBreakType(isOneMinute ? 'one' : 'five');
     setShowBreakModal(true);
-  }, 30 * 1000); // 30 seconds
+  }, 5 * 1000); // 20 seconds
 }, []);
 
 
@@ -56,7 +56,6 @@ const PraiseFeedScreen = () => {
     
     try {
       const token = await AsyncStorage.getItem('token');
-      
       const uid = await AsyncStorage.getItem('userId');
       
       console.log('token=', token);

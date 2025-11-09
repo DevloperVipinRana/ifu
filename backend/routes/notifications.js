@@ -3,7 +3,7 @@ const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-// Middleware to verify JWT token (adjust based on your auth setup)
+// Middleware to verify JWT token (adjust based on your auth setup)k
 const { authMiddleware } = require("./auth");
 
 // Get all notifications for current user
