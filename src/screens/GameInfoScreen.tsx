@@ -1,16 +1,14 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { SafeAreaView, StyleSheet, Text, View, Image, Pressable, ScrollView, Alert  } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { RootStackParamList } from '../../App';
 import LinearGradient from 'react-native-linear-gradient';
-import BreakPromptModal from '../components/common/BreakPromptModal';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GameInfo'>;
 
 const GameInfoScreen = ({ route, navigation }: Props) => {
   const { game } = route.params; // data passed from GamesScreen
-  const [showBreakModal, setShowBreakModal] = useState(false);
 
   return (
     <LinearGradient colors={['#f0e6ff', '#d8e2ff', '#e0f7ff']}
@@ -59,7 +57,13 @@ const GameInfoScreen = ({ route, navigation }: Props) => {
 
 
 <Pressable
-  onPress={() => setShowBreakModal(true)}
+  onPress={() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('GamesScreen');
+    }
+  }}
   style={{ borderRadius: 30, overflow: 'hidden', marginTop: 20 }}
 >
   <LinearGradient
@@ -69,24 +73,6 @@ const GameInfoScreen = ({ route, navigation }: Props) => {
     <Text style={styles.backButtonText}>Back to Games</Text>
   </LinearGradient>
 </Pressable>
-
-<BreakPromptModal
-  visible={showBreakModal}
-  message={"How about a quick 1-minute activity?"}
-  onCancel={() => {
-    setShowBreakModal(false);
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-    } else {
-      navigation.navigate('GamesScreen');
-    }
-  }}
-  onConfirm={() => {
-    setShowBreakModal(false);
-    navigation.navigate('RandomActivitySelector');
-    // navigation.navigate('ActivityListScreen');
-  }}
-/>
 
       </ScrollView>
     </SafeAreaView>

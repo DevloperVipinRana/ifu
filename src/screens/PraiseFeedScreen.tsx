@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Text, TextInput, Keyboard, Alert } from 'react-native';
+import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Text, TextInput, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
@@ -8,7 +8,6 @@ import { PraisePost } from '../components/common/PraisePost';
 import { colors } from '../theme/color';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BASE_URL } from '@env';
-import BreakPromptModal from '../components/common/BreakPromptModal';
 
 const PraiseFeedScreen = () => {
   const navigation = useNavigation();
@@ -16,50 +15,16 @@ const PraiseFeedScreen = () => {
   const [filteredPosts, setFilteredPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string>('');
-  const [showBreakModal, setShowBreakModal] = useState(false);
-  const [breakType, setBreakType] = useState<'one' | 'five'>('five');
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
-  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastActivityTsRef = useRef<number>(Date.now());
-
-  // const resetIdleTimer = useCallback(() => {
-  //   lastActivityTsRef.current = Date.now();
-  //   if (idleTimerRef.current) {
-  //     clearTimeout(idleTimerRef.current);
-  //   }
-  //   idleTimerRef.current = setTimeout(() => {
-  //     // 2 minutes of continuous focus/scrolling without leaving the screen
-  //     const isOneMinute = Math.random() < 0.5;
-  //     setBreakType(isOneMinute ? 'one' : 'five');
-  //     setShowBreakModal(true);
-  //   }, 2 * 60 * 1000);
-  // }, []);
-  const resetIdleTimer = useCallback(() => {
-  lastActivityTsRef.current = Date.now();
-
-  if (idleTimerRef.current) {
-    clearTimeout(idleTimerRef.current);
-  }
-
-  idleTimerRef.current = setTimeout(() => {
-    // 30 seconds of continuous focus/scrolling without leaving the screen
-    const isOneMinute = Math.random() < 0.5;
-    setBreakType(isOneMinute ? 'one' : 'five');
-    setShowBreakModal(true);
-  }, 5 * 1000); // 20 seconds
-}, []);
-
 
   const fetchFeed = async () => {
-    
     try {
       const token = await AsyncStorage.getItem('token');
       const uid = await AsyncStorage.getItem('userId');
       
       console.log('token=', token);
-      // console.log('uid=', uid);
       if (!uid) {
         console.error('No user ID found');
         setLoading(false);
@@ -73,7 +38,7 @@ const PraiseFeedScreen = () => {
       });
       const data = await res.json();
       
-      // ✅ Insert section headers between matched and unmatched posts
+      // Insert section headers between matched and unmatched posts
       const processedData: any[] = [];
       let hasMatchingPosts = false;
       let hasAddedOtherHeader = false;
@@ -86,15 +51,11 @@ const PraiseFeedScreen = () => {
         }
         
         // Add "Other Posts" header before first non-matching post
-        // if (!post.matchesInterest && !hasAddedOtherHeader) {
-        //   processedData.push({ type: 'header', id: 'header-other', title: 'Other Posts You Might Like' });
-        //   hasAddedOtherHeader = true;
-        // }
         if (!post.matchesInterest && !hasAddedOtherHeader) {
-  const headerTitle = hasMatchingPosts ? 'Other Posts You Might Like' : 'Posts You Might Like';
-  processedData.push({ type: 'header', id: 'header-other', title: headerTitle });
-  hasAddedOtherHeader = true;
-}
+          const headerTitle = hasMatchingPosts ? 'Other Posts You Might Like' : 'Posts You Might Like';
+          processedData.push({ type: 'header', id: 'header-other', title: headerTitle });
+          hasAddedOtherHeader = true;
+        }
         
         processedData.push({ ...post, type: 'post' });
       });
@@ -107,7 +68,6 @@ const PraiseFeedScreen = () => {
       setLoading(false);
     }
   };
-
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
@@ -251,26 +211,11 @@ const PraiseFeedScreen = () => {
 
   useEffect(() => { fetchFeed(); }, []);
 
-  // Setup timer on focus; clear on blur/unmount
-  useEffect(() => {
-    const unsubscribeFocus = navigation.addListener('focus', () => {
-      resetIdleTimer();
-    });
-    const unsubscribeBlur = navigation.addListener('blur', () => {
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-    });
-    return () => {
-      unsubscribeFocus();
-      unsubscribeBlur();
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-    };
-  }, [navigation, resetIdleTimer]);
-
   const handleNewPost = () => {
     navigation.navigate('CreatePostScreen' as never);
   };
 
-  // ✅ Render function for FlatList items
+  // Render function for FlatList items
   const renderItem = ({ item }: any) => {
     if (item.type === 'header') {
       return (
@@ -333,9 +278,6 @@ const PraiseFeedScreen = () => {
         keyExtractor={item => item.id || item._id}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
-        onScrollBeginDrag={resetIdleTimer}
-        onScrollEndDrag={resetIdleTimer}
-        onMomentumScrollEnd={resetIdleTimer}
         ListEmptyComponent={
           searchQuery ? (
             <View style={styles.emptyContainer}>
@@ -349,25 +291,6 @@ const PraiseFeedScreen = () => {
       <TouchableOpacity style={styles.fab} onPress={handleNewPost}>
         <Icon name="create-outline" size={32} color="white" />
       </TouchableOpacity>
-
-      <BreakPromptModal
-        visible={showBreakModal}
-        message={breakType === 'one' ? "How about a quick 1-minute activity?" : "Take a quick 5-minute activity break?"}
-        onCancel={() => {
-          setShowBreakModal(false);
-          resetIdleTimer();
-        }}
-        onConfirm={() => {
-          setShowBreakModal(false);
-          if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-          // Navigate based on randomly chosen type
-          if (breakType === 'one') {
-            navigation.navigate('RandomActivitySelector' as never);
-          } else {
-            navigation.navigate('ActivityListScreen' as never);
-          }
-        }}
-      />
     </SafeAreaView>
   );
 };

@@ -6,8 +6,6 @@ const router = express.Router();
 const prisma = require("../prismaClient");
 const { authMiddleware } = require("./auth");
 
-// const prisma = new PrismaClient();
-
 /**
  * POST /api/images/by-category
  * Fetch images matching the provided category hierarchy
@@ -25,8 +23,6 @@ router.post('/by-category', authMiddleware, async (req, res) => {
       });
     }
 
-    console.log('🔍 Searching for images with categories:', categories);
-
     // Query database for images that match all category levels in order
     // The categories field in DB is stored as a string array: [category, subcategory, sub-subcategory]
     const images = await prisma.images.findMany({
@@ -41,8 +37,6 @@ router.post('/by-category', authMiddleware, async (req, res) => {
       },
       take: 10 // Limit to 10 images for performance
     });
-
-    console.log(`✅ Found ${images.length} images for categories:`, categories);
 
     res.json({
       success: true,
@@ -65,29 +59,44 @@ router.post('/by-category', authMiddleware, async (req, res) => {
 
 /**
  * GET /api/images/all
- * Fetch all images (for admin/debugging)
+ * Fetch all images or random subset
  */
 router.get('/all', authMiddleware, async (req, res) => {
   try {
-    const images = await prisma.images.findMany({
-      orderBy: {
-        created_at: 'desc'
-      }
-    });
+    // Optional query param ?random=true&limit=30
+    const { random, limit } = req.query;
+
+    let images;
+
+    if (random === 'true') {
+      // PostgreSQL: ORDER BY RANDOM() for random selection
+      images = await prisma.$queryRawUnsafe(`
+        SELECT * FROM "images"
+        ORDER BY RANDOM()
+        LIMIT ${limit ? parseInt(limit, 10) : 30};
+      `);
+    } else {
+      // Default: recent first
+      images = await prisma.images.findMany({
+        orderBy: { created_at: 'desc' },
+        take: limit ? parseInt(limit, 10) : 30,
+      });
+    }
 
     res.json({
       success: true,
       count: images.length,
-      images
+      images,
     });
   } catch (error) {
     console.error('❌ Error fetching all images:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to fetch images',
-      message: error.message 
+      message: error.message,
     });
   }
 });
+
 
 /**
  * POST /api/images/upload

@@ -1,5 +1,5 @@
 // mobile/src/screens/Activity/RandomActivitySelector.tsx
-
+//1 min activity file
 import React, { useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';

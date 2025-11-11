@@ -15,7 +15,6 @@ import WeeklyGoalsScreen from './src/screens/WeeklyGoalsScreen';
 import OtpVerificationScreen from './src/screens/OtpVerificationScreen';
 import HomeScreen from './src/screens/Dashboard/HomeScreen';
 import RandomActivitySelector from './src/screens/Activity/RandomActivitySelector';
-// import AchievementsScreen from './src/screens/Goals/AchievementsScreen';
 import NotToDoScreen from './src/screens/Goals/NotToDoScreen';
 import BottomTabNavigator from './src/navigation/BottomTabNavigator';
 import ReflectionScreen from './src/screens/Activity/ReflectionScreen';
@@ -34,6 +33,7 @@ import DashboardScreen from './src/screens/Dashboard/DashboardScreen';
 import IcompletedScreen from './src/screens/Goals/IcompletedScreen';
 import LogAchievementScreen from './src/screens/Goals/LogAchievementScreen';
 import { UserPosts } from './src/components/common/UserPosts';
+import BreakPopupManager from './src/components/break/BreakPopupManager';
 
 export type RootStackParamList = {
   Login: undefined;
@@ -99,10 +99,14 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
+  const [navigationState, setNavigationState] = React.useState<any>();
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <NavigationContainer>
-        <Stack.Navigator 
+      <NavigationContainer
+        onStateChange={(state) => setNavigationState(state)}
+      >
+        <Stack.Navigator
           initialRouteName="OnboardingScreen"
           screenOptions={{ 
             headerShown: false,
@@ -129,7 +133,6 @@ export default function App() {
               animationDuration: 300,
             }}
           />
-
           <Stack.Screen name="BottomTabNavigator" component={BottomTabNavigator} />
           <Stack.Screen name="Signup" component={SignupScreen} />
           <Stack.Screen name="GamesScreen" component={GamesScreen} />
@@ -143,7 +146,6 @@ export default function App() {
           <Stack.Screen name="OtpVerificationScreen" component={OtpVerificationScreen} />
           <Stack.Screen name="HomeScreen" component={HomeScreen} />
           <Stack.Screen name="RandomActivitySelector" component={RandomActivitySelector} />
-          {/* <Stack.Screen name="AchievementsScreen" component={AchievementsScreen} /> */}
           <Stack.Screen name="NotToDoScreen" component={NotToDoScreen} />
           <Stack.Screen name="ReflectionScreen" component={ReflectionScreen} />
           <Stack.Screen name="FocusModePlayer" component={FocusModePlayer} />
@@ -161,8 +163,8 @@ export default function App() {
           <Stack.Screen name="LogAchievement" component={LogAchievementScreen} />
           <Stack.Screen name="UserPosts" component={UserPosts} />
         </Stack.Navigator>
+        <BreakPopupManager navigationState={navigationState} />
       </NavigationContainer>
     </GestureHandlerRootView>
   );
 }
-
