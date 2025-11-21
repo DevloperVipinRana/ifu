@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Text, TextInput, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { ScreenTitle } from '../components/common/StyledText';
 import { PraisePost } from '../components/common/PraisePost';
 import { colors } from '../theme/color';
@@ -11,6 +11,7 @@ import { BASE_URL } from '@env';
 
 const PraiseFeedScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
   const [posts, setPosts] = useState<any[]>([]);
   const [filteredPosts, setFilteredPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -18,6 +19,8 @@ const PraiseFeedScreen = () => {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
+  const flatListRef = useRef<FlatList>(null);
+  const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
 
   const fetchFeed = async () => {
     try {
@@ -68,6 +71,58 @@ const PraiseFeedScreen = () => {
       setLoading(false);
     }
   };
+
+  // Handle scrolling to specific post from notification
+  useEffect(() => {
+    const scrollToPostId = route.params?.scrollToPostId;
+    
+    console.log('Scroll effect triggered:', {
+      scrollToPostId,
+      hasFilteredPosts: filteredPosts.length > 0,
+      hasFlatListRef: !!flatListRef.current,
+      totalPosts: filteredPosts.length
+    });
+    
+    if (scrollToPostId && filteredPosts.length > 0 && !loading) {
+      // Wait for FlatList to be fully rendered
+      const timer = setTimeout(() => {
+        const index = filteredPosts.findIndex(item => 
+          item.type === 'post' && item._id === scrollToPostId
+        );
+        
+        console.log('Post index found:', index);
+        
+        if (index !== -1 && flatListRef.current) {
+          console.log('Attempting to scroll to index:', index);
+          
+          try {
+            flatListRef.current.scrollToIndex({
+              index,
+              animated: true,
+              viewPosition: 0.2,
+            });
+
+            // Highlight the post briefly
+            setHighlightedPostId(scrollToPostId);
+            setTimeout(() => setHighlightedPostId(null), 3000);
+          } catch (error) {
+            console.error('Scroll error:', error);
+            // Fallback: scroll to offset
+            flatListRef.current.scrollToOffset({
+              offset: index * 200, // Approximate post height
+              animated: true,
+            });
+            setHighlightedPostId(scrollToPostId);
+            setTimeout(() => setHighlightedPostId(null), 3000);
+          }
+        } else {
+          console.log('Post not found in feed');
+        }
+      }, 1000); // Increased timeout
+
+      return () => clearTimeout(timer);
+    }
+  }, [filteredPosts, route.params?.scrollToPostId, loading]);
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
@@ -215,6 +270,20 @@ const PraiseFeedScreen = () => {
     navigation.navigate('CreatePostScreen' as never);
   };
 
+  // Handle scrollToIndex failures (when item is not in viewport)
+  const onScrollToIndexFailed = (info: any) => {
+    const wait = new Promise(resolve => setTimeout(resolve, 500));
+    wait.then(() => {
+      if (flatListRef.current) {
+        flatListRef.current.scrollToIndex({
+          index: info.index,
+          animated: true,
+          viewPosition: 0.2,
+        });
+      }
+    });
+  };
+
   // Render function for FlatList items
   const renderItem = ({ item }: any) => {
     if (item.type === 'header') {
@@ -226,14 +295,20 @@ const PraiseFeedScreen = () => {
       );
     }
     
-    // Regular post
+    // Regular post - add highlight style if this post is highlighted
+    const isHighlighted = highlightedPostId === item._id;
+    
     return (
-      <PraisePost
-        {...item}
-        currentUserId={currentUserId}
-        onLike={() => handleLike(item._id)}
-        onComment={(text: string) => handleComment(item._id, text)}
-      />
+      <View style={[
+        isHighlighted && styles.highlightedPostContainer
+      ]}>
+        <PraisePost
+          {...item}
+          currentUserId={currentUserId}
+          onLike={() => handleLike(item._id)}
+          onComment={(text: string) => handleComment(item._id, text)}
+        />
+      </View>
     );
   };
 
@@ -274,10 +349,12 @@ const PraiseFeedScreen = () => {
       </View>
 
       <FlatList
+        ref={flatListRef}
         data={filteredPosts}
         keyExtractor={item => item.id || item._id}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
+        onScrollToIndexFailed={onScrollToIndexFailed}
         ListEmptyComponent={
           searchQuery ? (
             <View style={styles.emptyContainer}>
@@ -349,6 +426,14 @@ const styles = StyleSheet.create({
     width: 60,
     backgroundColor: colors.gradient?.passion?.[0] || '#FF6B6B',
     borderRadius: 1,
+  },
+  highlightedPostContainer: {
+    backgroundColor: `${colors.gradient?.passion?.[0] || '#FF6B6B'}10`,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: colors.gradient?.passion?.[0] || '#FF6B6B',
+    padding: 4,
+    marginVertical: 4,
   },
   emptyContainer: {
     alignItems: 'center',

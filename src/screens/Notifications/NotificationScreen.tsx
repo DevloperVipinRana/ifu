@@ -24,7 +24,7 @@ interface Notification {
     name: string;
     profileImage?: string;
   };
-  type: 'like' | 'comment';
+  type: 'like' | 'comment' | 'share';
   post: {
     _id: string;
     text?: string;
@@ -42,13 +42,29 @@ const NotificationItem = ({
   onPress: () => void;
 }) => {
   const getIcon = () => {
-    return notification.type === 'like' ? 'heart' : 'chatbubble';
+    switch (notification.type) {
+      case 'like':
+        return 'heart';
+      case 'comment':
+        return 'chatbubble';
+      case 'share':
+        return 'arrow-redo';
+      default:
+        return 'notifications';
+    }
   };
 
   const getColor = () => {
-    return notification.type === 'like'
-      ? colors.gradient.passion[0]
-      : colors.gradient.cool[0];
+    switch (notification.type) {
+      case 'like':
+        return colors.gradient.passion[0];
+      case 'comment':
+        return colors.gradient.cool[0];
+      case 'share':
+        return '#10B981'; // Green for share
+      default:
+        return colors.text.secondary;
+    }
   };
 
   const getTimeAgo = (date: string) => {
@@ -154,10 +170,18 @@ const NotificationsScreen = () => {
         );
       }
 
-      // Navigate to UserPosts with the specific post ID
-      navigation.navigate('UserPosts' as never, {
-        scrollToPostId: notification.post._id
-      } as never);
+      // Navigate based on notification type
+      if (notification.type === 'share') {
+        // For share notifications, navigate to feed with the specific post
+        navigation.navigate('PraiseFeedScreen' as never, {
+          scrollToPostId: notification.post._id
+        } as never);
+      } else {
+        // For like and comment, navigate to UserPosts
+        navigation.navigate('UserPosts' as never, {
+          scrollToPostId: notification.post._id
+        } as never);
+      }
     } catch (error) {
       console.error('Error handling notification press:', error);
     }
@@ -349,5 +373,4 @@ const styles = StyleSheet.create({
 });
 
 export default NotificationsScreen;
-
 
