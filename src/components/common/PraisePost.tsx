@@ -320,8 +320,8 @@ export const PraisePost: React.FC<PraisePostProps> = ({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: 'white',
-    borderRadius: 20,
-    marginBottom: 20,
+    borderRadius: 0, // Changed from 20 for Instagram look
+    marginBottom: 8, // Reduced from 20
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -332,7 +332,9 @@ const styles = StyleSheet.create({
   header: { 
     flexDirection: 'row', 
     alignItems: 'center', 
-    padding: 15 
+    padding: 15,
+    marginTop: -10, 
+    marginBottom: -10
   },
   avatar: { 
     width: 40, 

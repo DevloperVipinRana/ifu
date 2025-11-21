@@ -28,8 +28,8 @@ const EXCLUDED_SCREENS = [
   'ReflectionScreen',
 ];
 
-// const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-const INTERVAL_MS = 30 * 1000; // 5 seconds for testing
+const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+// const INTERVAL_MS = 30 * 1000; // 30 seconds for testing
 
 interface BreakPopupManagerProps {
   navigationState?: NavigationState;

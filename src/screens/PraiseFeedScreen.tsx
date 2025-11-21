@@ -408,11 +408,12 @@ const styles = StyleSheet.create({
   closeSearchIcon: {
     padding: 4,
   },
-  list: { padding: 20 },
+  list: { paddingVertical: 20 }, // Changed from padding: 20
   sectionHeader: {
     marginTop: 2,
     marginBottom: 15,
     alignItems: 'center',
+    paddingHorizontal: 20, // Add horizontal padding to section headers
   },
   sectionHeaderText: {
     fontSize: 18,
@@ -429,7 +430,6 @@ const styles = StyleSheet.create({
   },
   highlightedPostContainer: {
     backgroundColor: `${colors.gradient?.passion?.[0] || '#FF6B6B'}10`,
-    borderRadius: 12,
     borderWidth: 2,
     borderColor: colors.gradient?.passion?.[0] || '#FF6B6B',
     padding: 4,
@@ -439,6 +439,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 40,
+    paddingHorizontal: 20, // Add horizontal padding to empty state
   },
   emptyText: {
     marginTop: 16,
